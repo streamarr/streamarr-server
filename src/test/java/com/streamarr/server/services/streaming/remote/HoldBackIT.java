@@ -149,6 +149,7 @@ class HoldBackIT {
             .runtimeRegistry(registry)
             .producerLifecycle(lifecycle)
             .deliveryCoordinator(coordinator)
+            .unservedSegments(rig.unservedSegments())
             .build();
   }
 

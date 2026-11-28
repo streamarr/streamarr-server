@@ -25,6 +25,8 @@ import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.BaseCollectable;
+import com.streamarr.server.domain.media.LearnedStreamEnd;
+import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
@@ -47,6 +49,7 @@ import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.ShortCopy;
 import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.StreamDelivery;
+import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -57,7 +60,6 @@ import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntryRefusal;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
-import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.streaming.VideoSampleEntry;
@@ -802,6 +804,42 @@ class StreamingResolverTest {
         .isEqualTo(expected);
   }
 
+  @Test
+  @DisplayName("Should leave the terminal end unknown when playback has only a planned boundary")
+  void shouldLeaveTheTerminalEndUnknownWhenPlaybackHasOnlyAPlannedBoundary() {
+    STUB_SERVICE.setNextResult(
+        sessionBuilderLike(buildSession(UUID.randomUUID()))
+            .fixedMediaEnd(Optional.of(Duration.ofMillis(13_500)))
+            .build());
+
+    var created = startPlaybackReadingChoices(VideoQuality.ORIGINAL);
+
+    assertThat(
+            created.read(
+                CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.mediaEndSeconds",
+                Double.class))
+        .isNull();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"13.5", "20"})
+  @DisplayName("Should expose the terminal end when playback resumes at or beyond its fixed end")
+  void shouldExposeTheTerminalEndWhenPlaybackResumesAtOrBeyondItsFixedEnd(String position) {
+    var session =
+        sessionBuilderLike(buildSession(UUID.randomUUID()))
+            .fixedMediaEnd(Optional.of(Duration.ofMillis(13_500)))
+            .build();
+    STUB_SERVICE.setNextResult(session);
+
+    var created = startPlaybackAt(session.getMediaFileId().toString(), position);
+
+    assertThat(
+            created.read(
+                CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.mediaEndSeconds",
+                Double.class))
+        .isEqualTo(13.5);
+  }
+
   // Every encode is SDR until the server encodes HDR (#397); a copy keeps the source's base.
   @ParameterizedTest
   @CsvSource({"SDR, SDR", "PQ, PQ", "HLG, HLG"})
@@ -1444,7 +1482,12 @@ class StreamingResolverTest {
           }) {
             playbackSession {
               currentFormatAttempt {
-                ... on ReadyPlaybackFormatAttempt { streamSession { startPositionSeconds } }
+                ... on ReadyPlaybackFormatAttempt {
+                  streamSession {
+                    startPositionSeconds
+                    ... on HlsStreamSession { mediaEndSeconds }
+                  }
+                }
               }
             }
             userErrors {
@@ -1599,7 +1642,7 @@ class StreamingResolverTest {
             capabilities: {
               video: [{
                 codecFamily: HEVC
-                codecProfiles: [{profile: HEVC_MAIN_10, maxLevel: 51, maxTier: HIGH}]
+                codecProfiles: [{profile: HEVC_MAIN_10, maxLevel: 51}]
                 maxBitDepth: 10, maxWidth: 3840, maxHeight: 2160, maxFrameRate: 59.94
                 compatibleBases: [SDR, PQ, HLG]
                 dolbyVisionProfiles: [{profile: PROFILE_8_1, maxLevel: 6}]
@@ -1671,7 +1714,6 @@ class StreamingResolverTest {
                                     VideoCodecProfileCapability.builder()
                                         .profile(VideoCodecProfile.HEVC_MAIN_10)
                                         .maxLevel(51)
-                                        .maxTier(Optional.of(VideoCodecTier.HIGH))
                                         .build()))
                             .maxBitDepth(10)
                             .maxWidth(3840)
@@ -2085,6 +2127,116 @@ class StreamingResolverTest {
     assertThat(streamUrl.substring(streamUrl.indexOf("?t=") + 3)).matches("[A-Za-z0-9._-]+");
   }
 
+  // A file that was written to a pipe states no duration, so its header reads as zero. A token
+  // that lasted only the idle retention would expire while the player still reads the playlist.
+  @Test
+  @DisplayName(
+      "Should keep a playback token valid through the scanned media end when the container header"
+          + " states no duration")
+  void shouldKeepAPlaybackTokenValidThroughTheScannedMediaEndWhenTheHeaderStatesNoDuration() {
+    var session = buildSession(UUID.randomUUID());
+    var scanned = scannedEndIn(session);
+    var probe =
+        session.getMediaProbe().toBuilder()
+            .duration(Duration.ZERO)
+            .streams(List.of(StreamInfo.builder().index(1).codecType("video").build()))
+            .build()
+            .withLearnedEndTimes(
+                List.of(scanned.streamIndex(1).endTime(Duration.ofMinutes(95)).build()));
+
+    var lifetime = playbackTokenLifetimeOf(sessionBuilderLike(session).mediaProbe(probe).build());
+
+    assertThat(lifetime).isEqualTo(Duration.ofMinutes(95).plus(Duration.ofHours(1)));
+  }
+
+  // A direct-play stream session sends the whole file, and a player that can select an audio track
+  // inside it switches to the longer track without telling the server (ADR 0045).
+  @Test
+  @DisplayName(
+      "Should keep a direct-play token valid through the end of the file's longest audio track"
+          + " when the session's audio track ends earlier")
+  void shouldKeepADirectPlayTokenValidThroughTheEndOfTheFilesLongestAudioTrack() {
+    var session = buildSession(UUID.randomUUID());
+    var directPlay =
+        sessionBuilderLike(session)
+            .transcodeDecision(null)
+            .delivery(StreamDelivery.DIRECT_PLAY)
+            .sourceContainer(SourceContainer.MATROSKA)
+            .mediaProbe(probeWhoseSecondAudioTrackEndsLater(session))
+            .directPlayAudioTrackPosition(OptionalInt.of(0))
+            .build();
+
+    var lifetime = playbackTokenLifetimeOf(directPlay);
+
+    assertThat(lifetime).isEqualTo(Duration.ofMinutes(150).plus(Duration.ofHours(1)));
+  }
+
+  // An HLS stream session sends its own audio track only.
+  @Test
+  @DisplayName(
+      "Should keep an HLS token valid through the end of the session's own audio track when another"
+          + " audio track ends later")
+  void shouldKeepAnHlsTokenValidThroughTheEndOfTheSessionsOwnAudioTrack() {
+    var session = buildSession(UUID.randomUUID());
+    var hls =
+        sessionBuilderLike(session)
+            .mediaProbe(probeWhoseSecondAudioTrackEndsLater(session))
+            .build();
+
+    var lifetime = playbackTokenLifetimeOf(hls);
+
+    assertThat(lifetime).isEqualTo(Duration.ofMinutes(60).plus(Duration.ofHours(1)));
+  }
+
+  // The header states 150 min. A keyframe packet scan read the video and the session's audio track
+  // to 60 min, and the file's second audio track to 150 min.
+  private static MediaProbe probeWhoseSecondAudioTrackEndsLater(StreamSession session) {
+    var scanned = scannedEndIn(session);
+    return session.getMediaProbe().toBuilder()
+        .duration(Duration.ofMinutes(150))
+        .streams(
+            List.of(
+                StreamInfo.builder().index(1).codecType("video").build(),
+                audioStreamBuilder("aac").index(2).build(),
+                audioStreamBuilder("aac").index(3).build()))
+        .build()
+        .withLearnedEndTimes(
+            List.of(
+                scanned.streamIndex(1).endTime(Duration.ofMinutes(60)).build(),
+                scanned.streamIndex(2).endTime(Duration.ofMinutes(60)).build(),
+                scanned.streamIndex(3).endTime(Duration.ofMinutes(150)).build()));
+  }
+
+  // The session's probe names stream 1 as its chosen video stream.
+  private static LearnedStreamEnd.LearnedStreamEndBuilder scannedEndIn(StreamSession session) {
+    return LearnedStreamEnd.builder()
+        .mediaFileId(session.getMediaFileId())
+        .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
+        .fromPacketScan(true);
+  }
+
+  private Duration playbackTokenLifetimeOf(StreamSession session) {
+    STUB_SERVICE.setNextResult(session);
+    var mutation =
+        String.format(
+            """
+            mutation {
+              createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
+                playbackSession { currentFormatAttempt { ... on ReadyPlaybackFormatAttempt { streamSession { streamUrl } } } }
+              }
+            }
+            """,
+            UUID.randomUUID(), CAPABILITIES);
+
+    String streamUrl =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            mutation,
+            "data.createPlaybackSession.playbackSession.currentFormatAttempt.streamSession.streamUrl");
+
+    var decoded = decodeToken(streamUrl.substring(streamUrl.indexOf("?t=") + 3));
+    return Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt());
+  }
+
   private static Jwt decodeToken(String token) {
     return decode(token, tokenProperties());
   }
@@ -2262,11 +2414,6 @@ class StreamingResolverTest {
                 List.of("capabilities", "video", "0", "codecProfiles", "0", "maxLevel")),
             Map.of(
                 "__typename",
-                "VideoCodecTierInvalidError",
-                "inputPath",
-                List.of("capabilities", "video", "0", "codecProfiles", "0", "maxTier")),
-            Map.of(
-                "__typename",
                 "HlsAacCapabilityRequiredError",
                 "inputPath",
                 List.of("capabilities", "audio")));
@@ -2318,10 +2465,11 @@ class StreamingResolverTest {
   }
 
   @ParameterizedTest(name = "{0}")
-  @MethodSource("capabilitiesWithValuesTheSchemaDoesNotName")
-  @DisplayName("Should refuse the request when its declaration names a value the schema does not")
-  void shouldRefuseTheRequestWhenItsDeclarationNamesAValueTheSchemaDoesNot(
-      String scenario, String capabilities, String undefinedValue) {
+  @MethodSource("capabilitiesWithValuesOrFieldsTheSchemaDoesNotName")
+  @DisplayName(
+      "Should refuse the request when its declaration names a value or a field the schema does not")
+  void shouldRefuseTheRequestWhenItsDeclarationNamesAValueOrAFieldTheSchemaDoesNot(
+      String scenario, String capabilities, String undefinedName) {
     STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
 
     var result =
@@ -2340,14 +2488,14 @@ class StreamingResolverTest {
         .satisfies(
             error -> {
               assertThat(error.getErrorType()).hasToString("INVALID_ARGUMENT");
-              assertThat(error.getMessage()).contains(undefinedValue);
+              assertThat(error.getMessage()).contains(undefinedName);
             });
     assertThat(STUB_SERVICE.getAllSessions()).isEmpty();
   }
 
-  // ADR 0049 declares no Dolby Vision profile 7 and no NONE or UNSPECIFIED compatible base, and
-  // issue 395 declares no VP9 codec family.
-  static Stream<Arguments> capabilitiesWithValuesTheSchemaDoesNotName() {
+  // ADR 0049 declares no Dolby Vision profile 7, no NONE or UNSPECIFIED compatible base and no
+  // maximum codec tier, and issue 395 declares no VP9 codec family.
+  static Stream<Arguments> capabilitiesWithValuesOrFieldsTheSchemaDoesNotName() {
     return Stream.of(
         Arguments.of(
             "Dolby Vision profile 7",
@@ -2366,7 +2514,13 @@ class StreamingResolverTest {
         Arguments.of(
             "codec family VP9",
             CAPABILITIES.replace("codecFamily: H264", "codecFamily: VP9"),
-            "VP9"));
+            "VP9"),
+        Arguments.of(
+            "codec profile maximum tier",
+            CAPABILITIES.replace(
+                "codecFamily: H264, codecProfiles: [{profile: H264_HIGH, maxLevel: 41}]",
+                "codecFamily: HEVC, codecProfiles: [{profile: HEVC_MAIN, maxLevel: 51, maxTier: MAIN}]"),
+            "maxTier"));
   }
 
   // A client states whether its direct-play player selects an audio track (ADR 0045), so the
@@ -2557,6 +2711,7 @@ class StreamingResolverTest {
               .authority(nextResult.getAuthority())
               .sourcePath(nextResult.getSourcePath())
               .mediaProbe(nextResult.getMediaProbe())
+              .fixedMediaEnd(nextResult.getFixedMediaEnd())
               .transcodeDecision(nextResult.getTranscodeDecision())
               .delivery(nextResult.getDelivery())
               .sourceContainer(nextResult.getSourceContainer().orElse(null))
@@ -2583,7 +2738,7 @@ class StreamingResolverTest {
     }
 
     @Override
-    public boolean destroySessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
+    public boolean evictSessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
       throw new UnsupportedOperationException();
     }
 

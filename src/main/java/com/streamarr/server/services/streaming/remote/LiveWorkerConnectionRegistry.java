@@ -1055,7 +1055,10 @@ final class LiveWorkerConnectionRegistry {
         .ifPresent(
             _ ->
                 eventPublisher.publishEvent(
-                    new MediaSegmentStoredEvent(fromProto(metadata.getStreamSessionId()))));
+                    new MediaSegmentStoredEvent(
+                        fromProto(metadata.getStreamSessionId()),
+                        SegmentNames.storedSegmentName(
+                            metadata.getVariantLabel(), metadata.getSegmentName()))));
     return outcome;
   }
 

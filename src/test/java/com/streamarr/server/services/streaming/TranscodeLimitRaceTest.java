@@ -127,6 +127,7 @@ class TranscodeLimitRaceTest {
             .runtimeRegistry(registry)
             .producerLifecycle(lifecycle)
             .deliveryCoordinator(coordinator)
+            .unservedSegments(rig.unservedSegments())
             .meterRegistry(meters)
             .build();
   }

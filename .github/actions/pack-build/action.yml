@@ -14,7 +14,7 @@ runs:
   using: composite
   steps:
     - name: Install pack CLI
-      uses: buildpacks/github-actions/setup-pack@91cb4574e7b781941b4e3fa950e541e4b8754b3a # v6.2.2
+      uses: buildpacks/github-actions/setup-pack@0f33674a6e9aaddbdce74e58983bc1812871453e # v6.2.4
 
     - name: Build with pack CLI
       id: build
@@ -32,9 +32,9 @@ runs:
         # 333 MB. Metaspace commits on use, but the calculator takes the extra from -Xmx.
         metaspace_class_adjustment=150
         pack_args=(
-          --builder paketobuildpacks/ubuntu-noble-builder:0.0.217
+          --builder paketobuildpacks/ubuntu-noble-builder:0.0.229
           --buildpack paketo-buildpacks/java
-          --buildpack paketo-buildpacks/procfile@5.15.7
+          --buildpack paketo-buildpacks/procfile@5.15.9
           --env BP_JVM_VERSION=25
           --env BP_INCLUDE_FILES=Procfile
           --env "BP_OCI_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"

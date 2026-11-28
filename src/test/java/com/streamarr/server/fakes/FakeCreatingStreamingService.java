@@ -94,8 +94,8 @@ public final class FakeCreatingStreamingService implements StreamingService {
   }
 
   @Override
-  public boolean destroySessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
-    return streams.destroySessionIfLastAccessedBefore(sessionId, cutoff);
+  public boolean evictSessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
+    return streams.evictSessionIfLastAccessedBefore(sessionId, cutoff);
   }
 
   @Override

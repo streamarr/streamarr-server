@@ -42,6 +42,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -117,7 +118,7 @@ public class BaseCollectable extends TableImpl<BaseCollectableRecord> {
     }
 
     private BaseCollectable(Name alias, Table<BaseCollectableRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -170,7 +171,7 @@ public class BaseCollectable extends TableImpl<BaseCollectableRecord> {
 
         @Override
         public BaseCollectablePath as(Table<?> alias) {
-            return new BaseCollectablePath(alias.getQualifiedName(), this);
+            return new BaseCollectablePath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -295,7 +296,7 @@ public class BaseCollectable extends TableImpl<BaseCollectableRecord> {
 
     @Override
     public BaseCollectable as(Table<?> alias) {
-        return new BaseCollectable(alias.getQualifiedName(), this);
+        return new BaseCollectable(alias.getUnqualifiedName(), this);
     }
 
     /**

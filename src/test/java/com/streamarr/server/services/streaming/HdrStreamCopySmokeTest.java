@@ -160,6 +160,7 @@ class HdrStreamCopySmokeTest {
             .runtimeRegistry(sessionRegistry)
             .producerLifecycle(rig.lifecycle())
             .deliveryCoordinator(coordinator)
+            .unservedSegments(rig.unservedSegments())
             .languagePreferences(noLanguagePreferences())
             .build();
     playlistService = new HlsPlaylistService(properties);

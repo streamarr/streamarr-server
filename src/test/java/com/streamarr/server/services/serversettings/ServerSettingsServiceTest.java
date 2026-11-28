@@ -42,11 +42,11 @@ class ServerSettingsServiceTest {
     assertThat(setting.automatic())
         .isEqualTo(
             new AutomaticEncoderPresets(
-                EncoderPreset.FASTER, EncoderPreset.VERYFAST, EncoderPreset.FASTER));
+                EncoderPreset.FASTER, EncoderPreset.VERYFAST, EncoderPreset.FAST));
     assertThat(serverSettingsService.resolveEncoderPreset("h264")).isEqualTo(EncoderPreset.FASTER);
     assertThat(serverSettingsService.resolveEncoderPreset("hevc"))
         .isEqualTo(EncoderPreset.VERYFAST);
-    assertThat(serverSettingsService.resolveEncoderPreset("av1")).isEqualTo(EncoderPreset.FASTER);
+    assertThat(serverSettingsService.resolveEncoderPreset("av1")).isEqualTo(EncoderPreset.FAST);
     assertThat(authorizationService.recordedIntents())
         .containsExactly(new Intent.ViewEncoderPreset());
   }
@@ -73,7 +73,7 @@ class ServerSettingsServiceTest {
     assertThat(setting.automatic())
         .isEqualTo(
             new AutomaticEncoderPresets(
-                EncoderPreset.FASTER, EncoderPreset.VERYFAST, EncoderPreset.FASTER));
+                EncoderPreset.FASTER, EncoderPreset.VERYFAST, EncoderPreset.FAST));
   }
 
   @Test

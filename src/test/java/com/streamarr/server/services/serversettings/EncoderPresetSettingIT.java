@@ -71,7 +71,7 @@ class EncoderPresetSettingIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.data.encoderPresetSetting.preset").value("MEDIUM"))
         .andExpect(jsonPath("$.data.encoderPresetSetting.automatic.h264").value("FASTER"))
         .andExpect(jsonPath("$.data.encoderPresetSetting.automatic.hevc").value("VERYFAST"))
-        .andExpect(jsonPath("$.data.encoderPresetSetting.automatic.av1").value("FASTER"));
+        .andExpect(jsonPath("$.data.encoderPresetSetting.automatic.av1").value("FAST"));
 
     var stored = dsl.selectFrom(SERVER_SETTINGS).fetchSingle();
     assertThat(stored.getEncoderPreset()).isEqualTo("MEDIUM");

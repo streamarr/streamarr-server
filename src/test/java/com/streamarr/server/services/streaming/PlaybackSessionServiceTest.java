@@ -427,7 +427,7 @@ class PlaybackSessionServiceTest {
     var replacement = streams.createdCommands.getLast().streamSessionId();
     events.clear();
 
-    service.onMediaSegmentStored(new MediaSegmentStoredEvent(replacement));
+    service.onMediaSegmentStored(new MediaSegmentStoredEvent(replacement, "segment0.m4s"));
 
     assertThat(events.getEventsOfType(ProducedRangeMayHaveMovedEvent.class))
         .containsExactly(new ProducedRangeMayHaveMovedEvent(initial.playbackSessionId()));
@@ -444,8 +444,8 @@ class PlaybackSessionServiceTest {
     service.reportFormatFailure(report(initial, command).build()).orElseThrow();
     events.clear();
 
-    service.onMediaSegmentStored(new MediaSegmentStoredEvent(retired));
-    service.onMediaSegmentStored(new MediaSegmentStoredEvent(UUID.randomUUID()));
+    service.onMediaSegmentStored(new MediaSegmentStoredEvent(retired, "segment0.m4s"));
+    service.onMediaSegmentStored(new MediaSegmentStoredEvent(UUID.randomUUID(), "segment0.m4s"));
 
     assertThat(events.getEventsOfType(ProducedRangeMayHaveMovedEvent.class)).isEmpty();
   }
@@ -937,6 +937,28 @@ class PlaybackSessionServiceTest {
               assertThat(ready.session().getOptions()).isEqualTo(command.options());
               assertThat(streams.getAllSessions()).containsExactly(ready.session());
             });
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the selected media end when a copy fails before initial creation returns")
+  void shouldKeepTheSelectedMediaEndWhenACopyFailsBeforeInitialCreationReturns() {
+    streams.fixedMediaEnd = Optional.of(Duration.ofSeconds(13));
+    streams.duringNextCreation =
+        command -> {
+          streams.fixedMediaEnd = Optional.of(Duration.ofSeconds(12));
+          service.onVideoCopyOutputMismatch(
+              new VideoCopyOutputMismatchEvent(
+                  command.streamSessionId(), UUID.randomUUID(), "default"));
+        };
+
+    var snapshot = accepted(service.start(startCommand().build()));
+
+    assertThat(snapshot.formatAttemptCount()).isEqualTo(2);
+    assertThat(snapshot.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> assertThat(ready.session().getMediaEnd()).isEqualTo(Duration.ofSeconds(13)));
   }
 
   @ParameterizedTest
@@ -3328,6 +3350,7 @@ class PlaybackSessionServiceTest {
       "Should return the new pending reservation when initial copy fails before creation returns")
   void shouldReturnTheNewPendingReservationWhenInitialCopyFailsBeforeCreationReturns() {
     var work = new ConcurrentLinkedQueue<Runnable>();
+    streams.fixedMediaEnd = Optional.of(Duration.ofSeconds(13));
     var playback =
         PlaybackSessionService.builder()
             .eventPublisher(_ -> {})
@@ -3338,10 +3361,12 @@ class PlaybackSessionServiceTest {
             .clock(clock)
             .build();
     streams.duringNextCreation =
-        child ->
-            playback.onVideoCopyOutputMismatch(
-                new VideoCopyOutputMismatchEvent(
-                    child.streamSessionId(), UUID.randomUUID(), "default"));
+        child -> {
+          streams.fixedMediaEnd = Optional.of(Duration.ofSeconds(12));
+          playback.onVideoCopyOutputMismatch(
+              new VideoCopyOutputMismatchEvent(
+                  child.streamSessionId(), UUID.randomUUID(), "default"));
+        };
     var command = startCommand().build();
     var pending = accepted(playback.start(command));
     assertThat(pending.formatAttemptCount()).isEqualTo(2);
@@ -3349,7 +3374,9 @@ class PlaybackSessionServiceTest {
     assertThat(streams.getAllSessions()).isEmpty();
     drain(work);
     assertThat(playback.access(request(pending, command)).orElseThrow().currentFormatAttempt())
-        .isInstanceOf(PlaybackFormatAttempt.Ready.class);
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> assertThat(ready.session().getMediaEnd()).isEqualTo(Duration.ofSeconds(13)));
     assertThat(streams.getActiveSessionCount()).isEqualTo(1);
   }
 
@@ -3524,6 +3551,7 @@ class PlaybackSessionServiceTest {
     private List<DecisionReason> copyReasons = List.of();
     private List<DecisionReason> encodeReasons = List.of();
     private MediaProbe sourceProbe = defaultProbeBuilder().build();
+    private Optional<Duration> fixedMediaEnd = Optional.empty();
     // The Dolby Vision that a copy keeps when the format attempt may keep it, as the transcode
     // decision finds for a client that declares the profile.
     private Optional<DolbyVisionProfile> copiedDolbyVision = Optional.empty();
@@ -3549,6 +3577,7 @@ class PlaybackSessionServiceTest {
               .authority(command.identity().playbackAuthority())
               .options(command.options())
               .mediaProbe(sourceProbe)
+              .fixedMediaEnd(command.fixedMediaEnd().or(() -> fixedMediaEnd))
               .startPosition(command.startPosition().orElse(null))
               .build();
       sessions.put(session.getSessionId(), session);
@@ -3640,7 +3669,7 @@ class PlaybackSessionServiceTest {
     }
 
     @Override
-    public boolean destroySessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
+    public boolean evictSessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
       throw new UnsupportedOperationException();
     }
 

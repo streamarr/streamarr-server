@@ -32,8 +32,9 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
+import java.util.function.Consumer;
 import lombok.Builder;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -57,6 +58,7 @@ public class HlsStreamingService implements StreamingService {
   private final SegmentDeliveryCoordinator deliveryCoordinator;
   private final MeterRegistry meterRegistry;
   private final PlaybackLanguagePreferences languagePreferences;
+  @NonNull private final UnservedSegments unservedSegments;
 
   @Override
   public Outcome<StreamSession, CreateStreamSessionRejection> createSession(
@@ -112,13 +114,6 @@ public class HlsStreamingService implements StreamingService {
       return Outcome.rejected(new CreateStreamSessionRejection.NoMediaSegments());
     }
 
-    if (command
-        .startPosition()
-        .filter(start -> start.compareTo(probe.duration()) >= 0)
-        .isPresent()) {
-      return Outcome.rejected(new CreateStreamSessionRejection.StartPositionOutOfRange());
-    }
-
     var picture = probe.displayedSize();
     if (picture.width() <= 0 || picture.height() <= 0) {
       return Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize());
@@ -128,17 +123,12 @@ public class HlsStreamingService implements StreamingService {
     var directPlay =
         transcodeDecisionService.decideDirectPlay(DirectPlayRequest.of(command, probe));
     if (directPlay instanceof DirectPlayChoice.Accepted(var container, var audioTrackPosition)) {
-      var session =
+      return startDirectPlay(
+          command,
           directPlaySession(command, mediaFile, probe)
               .sourceContainer(container)
               .directPlayAudioTrackPosition(audioTrackPosition)
-              .build();
-      runtimeRegistry.save(session);
-      log.info(
-          "Created direct-play streaming session {} for media file {}",
-          command.streamSessionId(),
-          command.mediaFileId());
-      return Outcome.accepted(session);
+              .build());
     }
 
     // Without a connected worker no encoder is verified. That moment must not read as faulty
@@ -161,7 +151,8 @@ public class HlsStreamingService implements StreamingService {
             .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
             .hardwareEncodableVideoCodecFamilies(
                 transcodeExecutor.hardwareEncodableVideoCodecFamilies())
-            .verifiedVideoCodecFamilies(codecFamiliesOf(verifiedWorkers))
+            .verifiedVideoCodecFamilies(
+                WorkerVerifiedCodecFamilies.codecFamiliesOfAny(verifiedWorkers))
             .viewerLimits(ViewerLimits.of(options))
             .videoCopySupport(transcodeExecutor.videoCopySupportByWorker())
             .videoEncoders(encodableVideoEncoders(command.softwareEncodeCodecFamily()))
@@ -169,7 +160,10 @@ public class HlsStreamingService implements StreamingService {
             .directPlayRefusals(directPlay.refusals())
             .softwareEncodeCodecFamily(command.softwareEncodeCodecFamily())
             .build();
-    var candidate = transcodeDecisionService.decide(request);
+    var candidate =
+        transcodeDecisionService
+            .decide(request)
+            .or(() -> finishedEncodeCandidate(command, request));
     if (candidate.isEmpty()) {
       candidate = decideAfterStoppingALeftVariant(command.streamSessionId(), request);
     }
@@ -186,7 +180,10 @@ public class HlsStreamingService implements StreamingService {
 
     var admission = admission(request, decisionWithSessionAudio);
     var sessionId = command.streamSessionId();
-    var refusal = capacityRefusalFor(admission.decision());
+    var refusal =
+        resumesPastMediaEnd(command, probe, admission.decision())
+            ? Optional.<CapacityRefusal>empty()
+            : capacityRefusalFor(admission.decision());
     // A left variant only serves its own player's switch back, so it never keeps a new stream
     // session out (ADR 0019).
     if (refusal.isPresent() && isSlotShortage(refusal.get())) {
@@ -210,14 +207,21 @@ public class HlsStreamingService implements StreamingService {
             .authority(authority)
             .sourcePath(FilepathCodec.decode(mediaFile.getFilepathUri()))
             .mediaProbe(probe)
+            .fixedMediaEnd(fixedMediaEndFor(command, probe, decision))
             .transcodeDecision(decision)
             .options(options)
             .variants(variants)
             .startPosition(command.startPosition().orElse(null))
             .createdAt(now)
             .build();
+    if (session.getNormalEnd().isPresent()) {
+      runtimeRegistry.save(session);
+      return Outcome.accepted(session);
+    }
+
     startAtTheStartSegment(session);
 
+    unservedSegments.streamSessionStarts(sessionId);
     try {
       runtimeRegistry.save(session);
       session = producerLifecycle.startFirstListedVariant(session);
@@ -225,6 +229,7 @@ public class HlsStreamingService implements StreamingService {
       // Another start took the last place under the transcode limit after this admission, so no
       // job attempt of this stream session was dispatched.
       runtimeRegistry.removeById(sessionId);
+      unservedSegments.countAfterSessionStartFailed(sessionId);
       return Outcome.rejected(
           refuseForLackOfCapacity(CapacityRefusal.NO_FREE_CONFIGURED_TRANSCODE_SLOT));
     } catch (RuntimeException startupFailure) {
@@ -241,6 +246,37 @@ public class HlsStreamingService implements StreamingService {
     return Outcome.accepted(session);
   }
 
+  private Optional<Duration> fixedMediaEndFor(
+      CreateStreamSessionCommand command, MediaProbe probe, TranscodeDecision decision) {
+    return command
+        .fixedMediaEnd()
+        .or(() -> MediaSegmentTimelines.endOfCopiedAudioSegment(probe, decision, properties));
+  }
+
+  // Every playlist of an HLS stream session ends at its media end, which can lie before or after
+  // the
+  // duration that the container header states.
+  private boolean resumesPastMediaEnd(
+      CreateStreamSessionCommand command, MediaProbe probe, TranscodeDecision decision) {
+    var mediaEnd = fixedMediaEndFor(command, probe, decision).orElseGet(probe::mediaEnd);
+    return startsAtOrPast(command, mediaEnd);
+  }
+
+  // A finished resume needs a compatible format's grid, but no free encoder or job slot.
+  private Optional<TranscodeDecision> finishedEncodeCandidate(
+      CreateStreamSessionCommand command, TranscodeDecisionRequest request) {
+    if (command.startPosition().isEmpty()) {
+      return Optional.empty();
+    }
+
+    return verifiedEncodeCandidate(request)
+        .filter(decision -> encodeRejection(request, decision).isEmpty())
+        .filter(
+            decision ->
+                resumesPastMediaEnd(
+                    command, request.source(), admission(request, decision).decision()));
+  }
+
   // The first-listed variant's first job attempt starts at the segment that holds the start
   // position, on the stream session's own segment timeline.
   private void startAtTheStartSegment(StreamSession session) {
@@ -251,6 +287,30 @@ public class HlsStreamingService implements StreamingService {
 
     var timeline = MediaSegmentTimelines.of(session, properties);
     session.setCurrentSegment(timeline.mediaSegmentIndexAt(startPosition.get()));
+  }
+
+  // A direct-play stream session sends every audio track of the file, so its media end can lie
+  // past the end of the session's own audio track.
+  private Outcome<StreamSession, CreateStreamSessionRejection> startDirectPlay(
+      CreateStreamSessionCommand command, StreamSession session) {
+    if (session.getMediaEnd().isZero() || session.getMediaEnd().isNegative()) {
+      return Outcome.rejected(new CreateStreamSessionRejection.NoMediaSegments());
+    }
+
+    if (startsAtOrPast(command, session.getMediaEnd())) {
+      return Outcome.rejected(new CreateStreamSessionRejection.StartPositionOutOfRange());
+    }
+
+    runtimeRegistry.save(session);
+    log.info(
+        "Created direct-play streaming session {} for media file {}",
+        command.streamSessionId(),
+        command.mediaFileId());
+    return Outcome.accepted(session);
+  }
+
+  private static boolean startsAtOrPast(CreateStreamSessionCommand command, Duration mediaEnd) {
+    return command.startPosition().filter(start -> start.compareTo(mediaEnd) >= 0).isPresent();
   }
 
   // A direct-play stream session starts no job attempt, so it has no transcode decision, producer
@@ -463,12 +523,6 @@ public class HlsStreamingService implements StreamingService {
             .build());
   }
 
-  private static Set<String> codecFamiliesOf(List<WorkerVerifiedCodecFamilies> workers) {
-    return workers.stream()
-        .flatMap(worker -> worker.codecFamilies().stream())
-        .collect(Collectors.toUnmodifiableSet());
-  }
-
   private CreateStreamSessionRejection refuseForLackOfCapacity(CapacityRefusal refusal) {
     meterRegistry
         .counter(CAPACITY_REFUSALS_METRIC, "cause", refusal.name().toLowerCase(Locale.ROOT))
@@ -480,6 +534,8 @@ public class HlsStreamingService implements StreamingService {
   private void rollbackFailedStartup(UUID sessionId, RuntimeException startupFailure) {
     suppressCleanupFailure(startupFailure, () -> transcodeExecutor.destroySession(sessionId));
     suppressCleanupFailure(startupFailure, () -> segmentStore.deleteSession(sessionId));
+    suppressCleanupFailure(
+        startupFailure, () -> unservedSegments.countAfterSessionStartFailed(sessionId));
     suppressCleanupFailure(startupFailure, () -> runtimeRegistry.removeById(sessionId));
   }
 
@@ -518,21 +574,21 @@ public class HlsStreamingService implements StreamingService {
   @Override
   public void destroySession(UUID sessionId) {
     if (producerLifecycle.removeSession(sessionId)) {
-      cleanUpDestroyed(sessionId);
+      cleanUpDestroyed(sessionId, unservedSegments::countAfterSessionEnded);
     }
   }
 
   @Override
-  public boolean destroySessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
+  public boolean evictSessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
     if (!producerLifecycle.removeSessionIfLastAccessedBefore(sessionId, cutoff)) {
       return false;
     }
 
-    cleanUpDestroyed(sessionId);
+    cleanUpDestroyed(sessionId, unservedSegments::countAfterDiskPressureEviction);
     return true;
   }
 
-  private void cleanUpDestroyed(UUID sessionId) {
+  private void cleanUpDestroyed(UUID sessionId, Consumer<UUID> countUnservedSegments) {
     try {
       producerLifecycle.stopForDestroy(sessionId);
     } finally {
@@ -540,6 +596,7 @@ public class HlsStreamingService implements StreamingService {
         // The session is already unreachable; a failed stop must not orphan its segments.
         segmentStore.deleteSession(sessionId);
       } finally {
+        countUnservedSegments.accept(sessionId);
         deliveryCoordinator.forgetSession(sessionId);
       }
     }

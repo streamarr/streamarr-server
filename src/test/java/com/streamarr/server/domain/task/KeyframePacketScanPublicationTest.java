@@ -13,6 +13,7 @@ import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -38,11 +39,16 @@ class KeyframePacketScanPublicationTest {
     assertThat(publication.keyframes()).isEqualTo(keyframes);
   }
 
+  // Lombok's builder setters refuse null before the record's constructor runs, so these tests
+  // construct the record itself.
   @Test
   @DisplayName("Should reject a publication when its media file is missing")
   void shouldRejectAPublicationWhenItsMediaFileIsMissing() {
     assertThatNullPointerException()
-        .isThrownBy(() -> new KeyframePacketScanPublication(null, SNAPSHOT, 3, UNAVAILABLE))
+        .isThrownBy(
+            () ->
+                new KeyframePacketScanPublication(
+                    null, SNAPSHOT, 3, UNAVAILABLE, List.of(), Optional.empty()))
         .withMessageContaining("mediaFileId");
   }
 
@@ -52,7 +58,10 @@ class KeyframePacketScanPublicationTest {
     var mediaFileId = UUID.randomUUID();
 
     assertThatNullPointerException()
-        .isThrownBy(() -> new KeyframePacketScanPublication(mediaFileId, null, 3, UNAVAILABLE))
+        .isThrownBy(
+            () ->
+                new KeyframePacketScanPublication(
+                    mediaFileId, null, 3, UNAVAILABLE, List.of(), Optional.empty()))
         .withMessageContaining("snapshot");
   }
 
@@ -62,8 +71,37 @@ class KeyframePacketScanPublicationTest {
     var mediaFileId = UUID.randomUUID();
 
     assertThatNullPointerException()
-        .isThrownBy(() -> new KeyframePacketScanPublication(mediaFileId, SNAPSHOT, 3, null))
+        .isThrownBy(
+            () ->
+                new KeyframePacketScanPublication(
+                    mediaFileId, SNAPSHOT, 3, null, List.of(), Optional.empty()))
         .withMessageContaining("keyframes");
+  }
+
+  @Test
+  @DisplayName("Should reject a publication when its stream ends are missing")
+  void shouldRejectAPublicationWhenItsStreamEndsAreMissing() {
+    var mediaFileId = UUID.randomUUID();
+
+    assertThatNullPointerException()
+        .isThrownBy(
+            () ->
+                new KeyframePacketScanPublication(
+                    mediaFileId, SNAPSHOT, 3, UNAVAILABLE, null, Optional.empty()))
+        .withMessageContaining("streamEnds");
+  }
+
+  @Test
+  @DisplayName("Should reject a publication when its stream measurements are missing")
+  void shouldRejectAPublicationWhenItsStreamMeasurementsAreMissing() {
+    var mediaFileId = UUID.randomUUID();
+
+    assertThatNullPointerException()
+        .isThrownBy(
+            () ->
+                new KeyframePacketScanPublication(
+                    mediaFileId, SNAPSHOT, 3, UNAVAILABLE, List.of(), null))
+        .withMessageContaining("streamMeasurements");
   }
 
   @ParameterizedTest
@@ -78,22 +116,25 @@ class KeyframePacketScanPublicationTest {
   }
 
   private static Stream<KeyframeKnowledge> keyframesThatAPacketScanReports() {
-    return Stream.of(
-        new KeyframeKnowledge.Known(
-            KeyframePositions.builder()
-                .streamIndex(0)
-                .timeBaseNumerator(1)
-                .timeBaseDenominator(90_000)
-                .source(KeyframePositionSource.PACKET_SCAN)
-                .keyframes(List.of(new KeyframePosition(0, 0)))
-                .build()),
-        UNAVAILABLE);
+    return Stream.of(new KeyframeKnowledge.Known(scannedPositions()), UNAVAILABLE);
   }
 
   private static Stream<KeyframeKnowledge> keyframesThatNoPacketScanReports() {
     return Stream.of(
         new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX),
+        new KeyframeKnowledge.PacketScanRequiredWithKeptPositions(
+            KeyframePacketScanReason.NO_CONTAINER_INDEX, scannedPositions()),
         new KeyframeKnowledge.NotReported());
+  }
+
+  private static KeyframePositions scannedPositions() {
+    return KeyframePositions.builder()
+        .streamIndex(0)
+        .timeBaseNumerator(1)
+        .timeBaseDenominator(90_000)
+        .source(KeyframePositionSource.PACKET_SCAN)
+        .keyframes(List.of(new KeyframePosition(0, 0)))
+        .build();
   }
 
   private static KeyframePacketScanPublication.KeyframePacketScanPublicationBuilder builder() {

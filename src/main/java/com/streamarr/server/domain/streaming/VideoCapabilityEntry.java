@@ -257,21 +257,19 @@ public record VideoCapabilityEntry(
                     .bitrate(bitrate)
                     .format(request.format())
                     .build())
-        .filter(output -> acceptsLevelAndTier(capability, output))
+        .filter(output -> acceptsLevel(capability, output))
         .findFirst();
   }
 
-  private static boolean acceptsLevelAndTier(
+  private static boolean acceptsLevel(
       VideoCodecProfileCapability capability, EncodedVideoOutput output) {
     return VideoEncodeDecision.allowing(output)
-        .filter(
-            decision ->
-                capability.acceptsLevelAndTier(OptionalInt.of(decision.level()), decision.tier()))
+        .filter(decision -> capability.acceptsLevel(OptionalInt.of(decision.level())))
         .isPresent();
   }
 
-  // An unknown codec level or tier fits wherever the known picture size and frame rate fit, so it
-  // passes its own check and leaves the decision to those maximums.
+  // An unknown codec level fits wherever the known picture size and frame rate fit, so it passes
+  // its own check and leaves the decision to those maximums.
   private List<DecisionReason> refusedProperties(
       VideoStreamCopy copy, VideoStreamProperties properties) {
     var refusals = codingAndPictureRefusals(copy, properties);
@@ -308,10 +306,7 @@ public record VideoCapabilityEntry(
       return Optional.of(DecisionReason.VIDEO_CODEC_PROFILE_NOT_DECLARED);
     }
 
-    if (listed.stream()
-        .noneMatch(
-            capability ->
-                capability.acceptsLevelAndTier(properties.codecLevel(), properties.codecTier()))) {
+    if (listed.stream().noneMatch(capability -> capability.acceptsLevel(properties.codecLevel()))) {
       return Optional.of(DecisionReason.VIDEO_CODEC_LEVEL_NOT_DECLARED);
     }
 

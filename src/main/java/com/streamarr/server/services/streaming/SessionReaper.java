@@ -114,7 +114,7 @@ public class SessionReaper {
     var lastAccessCutoff = clock.instant().minus(properties.sessionTimeout());
     try {
       // The removal is one step with request access, so a session a player resumed stays.
-      if (!streamingService.destroySessionIfLastAccessedBefore(sessionId, lastAccessCutoff)) {
+      if (!streamingService.evictSessionIfLastAccessedBefore(sessionId, lastAccessCutoff)) {
         return;
       }
 

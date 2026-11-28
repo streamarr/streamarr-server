@@ -18,10 +18,11 @@ public interface StreamingService {
   void destroySession(UUID sessionId);
 
   /**
-   * System destroy of a session that no request reached since the cutoff; returns whether it
-   * destroyed the session. A request that reaches the session first keeps it.
+   * Disk-pressure eviction: a system destroy, to free space in the segment folder, of a session
+   * that no request reached since the cutoff; returns whether it destroyed the session. A request
+   * that reaches the session first keeps it.
    */
-  boolean destroySessionIfLastAccessedBefore(UUID sessionId, Instant cutoff);
+  boolean evictSessionIfLastAccessedBefore(UUID sessionId, Instant cutoff);
 
   /**
    * Owner-checked destroy. A wrong-owner call is a silent no-op by design: an unowned session must

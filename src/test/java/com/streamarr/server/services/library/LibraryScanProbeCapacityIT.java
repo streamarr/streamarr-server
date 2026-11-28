@@ -225,6 +225,7 @@ class LibraryScanProbeCapacityIT extends AbstractScanningIntegrationTest {
             .runtimeRegistry(runtimeRegistry)
             .producerLifecycle(rig.lifecycle())
             .deliveryCoordinator(rig.coordinator())
+            .unservedSegments(rig.unservedSegments())
             .build();
     var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
     return streamingService.createSession(

@@ -37,6 +37,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -122,7 +123,7 @@ public class SessionProgress extends TableImpl<SessionProgressRecord> {
     }
 
     private SessionProgress(Name alias, Table<SessionProgressRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -175,7 +176,7 @@ public class SessionProgress extends TableImpl<SessionProgressRecord> {
 
         @Override
         public SessionProgressPath as(Table<?> alias) {
-            return new SessionProgressPath(alias.getQualifiedName(), this);
+            return new SessionProgressPath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -240,7 +241,7 @@ public class SessionProgress extends TableImpl<SessionProgressRecord> {
 
     @Override
     public SessionProgress as(Table<?> alias) {
-        return new SessionProgress(alias.getQualifiedName(), this);
+        return new SessionProgress(alias.getUnqualifiedName(), this);
     }
 
     /**

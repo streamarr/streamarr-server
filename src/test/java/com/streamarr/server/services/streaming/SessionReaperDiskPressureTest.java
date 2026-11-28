@@ -81,6 +81,7 @@ class SessionReaperDiskPressureTest {
             .runtimeRegistry(registry)
             .producerLifecycle(producerLifecycle)
             .deliveryCoordinator(rig.coordinator())
+            .unservedSegments(rig.unservedSegments())
             .meterRegistry(meters)
             .build();
   }

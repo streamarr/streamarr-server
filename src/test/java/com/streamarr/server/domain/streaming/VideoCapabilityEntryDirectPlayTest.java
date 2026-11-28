@@ -2,6 +2,7 @@ package com.streamarr.server.domain.streaming;
 
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.upToLevel;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.videoEntryBuilderFor;
 import static com.streamarr.server.fixtures.VideoPlaybackFactsFixture.dolbyVisionProfile5;
 import static com.streamarr.server.fixtures.VideoPlaybackFactsFixture.dolbyVisionProfile82;
@@ -40,6 +41,26 @@ class VideoCapabilityEntryDirectPlayTest {
         .isTrue();
   }
 
+  @Test
+  @DisplayName(
+      "Should accept a High tier stream when the entry lists its container and fits its codec"
+          + " profile and level")
+  void shouldAcceptAHighTierStreamWhenTheEntryListsItsContainerAndFitsItsCodecProfileAndLevel() {
+    var highTier =
+        hevcStream()
+            .videoProperties(
+                Optional.of(
+                    VideoStreamProperties.builder()
+                        .codecProfile(Optional.of(VideoCodecProfile.HEVC_MAIN_10))
+                        .codecLevel(OptionalInt.of(51))
+                        .codecTier(Optional.of(VideoCodecTier.HIGH))
+                        .firstFramesRead(true)
+                        .build()))
+            .build();
+
+    assertThat(directPlayEntry().build().directPlayRefusals(highTier, CONTAINER)).isEmpty();
+  }
+
   @ParameterizedTest(name = "{0}")
   @MethodSource("entriesThatRefuseTheStream")
   @DisplayName("Should refuse the stream when one property of the entry does not cover it")
@@ -60,12 +81,12 @@ class VideoCapabilityEntryDirectPlayTest {
         Arguments.of(
             "another codec profile",
             directPlayEntry()
-                .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN, 51)))
+                .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN, 51)))
                 .build()),
         Arguments.of(
             "a lower codec level",
             directPlayEntry()
-                .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10, 40)))
+                .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 40)))
                 .build()),
         Arguments.of("a lower bit depth", directPlayEntry().maxBitDepth(8).build()),
         Arguments.of("a smaller picture", directPlayEntry().maxWidth(1280).maxHeight(720).build()),
@@ -417,14 +438,6 @@ class VideoCapabilityEntryDirectPlayTest {
     return h264Stream()
         .dynamicRange(dolbyVisionProfile9())
         .sampleEntry(Optional.of(sampleEntry))
-        .build();
-  }
-
-  private static VideoCodecProfileCapability mainTier(VideoCodecProfile profile, int maxLevel) {
-    return VideoCodecProfileCapability.builder()
-        .profile(profile)
-        .maxLevel(maxLevel)
-        .maxTier(Optional.of(VideoCodecTier.MAIN))
         .build();
   }
 

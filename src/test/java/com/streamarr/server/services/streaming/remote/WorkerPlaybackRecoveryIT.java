@@ -251,16 +251,14 @@ class WorkerPlaybackRecoveryIT {
 
   @Test
   @DisplayName(
-      "Should fall back to an encode when the copy's report says that the audio still has media"
-          + " after the copy's end, although the stored probe says that every stream ended there")
-  void shouldFallBackToAnEncodeWhenTheCopysReportSaysTheAudioOutlastsTheCopyAgainstTheProbe()
-      throws Exception {
+      "Should fall back to an encode when the copy's report reveals audio beyond an unknown end")
+  void shouldFallBackToAnEncodeWhenTheCopysReportRevealsAudioBeyondAnUnknownEnd() throws Exception {
     var source =
         worker.generateMedia(sourceRoot.resolve("movie.mp4"), soundedSourceArguments(24, 24));
     var containerProbe = probe(source);
     worker.generateMedia(source, soundedSourceArguments(4, 4));
-    // The container and its keyframe index describe 24 s, and the stored streams end at 4 s.
-    var storedProbe = withStreamsOf(containerProbe, probe(source));
+    // The container and its keyframe index describe 24 s, but the stored stream ends are unknown.
+    var storedProbe = withoutStreamEndTimes(withStreamsOf(containerProbe, probe(source)));
     // The file now holds 24 s of audio beside its 4 s of video, which the probe never saw.
     worker.generateMedia(source, soundedSourceArguments(4, 24));
     try (var playback = new PlaybackRig(autoPlayback(source, storedProbe))) {
@@ -302,6 +300,46 @@ class WorkerPlaybackRecoveryIT {
           .satisfiesExactly(
               video -> assertThat(video.toMillis()).isCloseTo(12_000, within(50L)),
               audio -> assertThat(audio.toMillis()).isCloseTo(6_000, within(50L)));
+    }
+  }
+
+  @Test
+  @DisplayName("Should complete at the planned boundary when copied audio has a known early end")
+  void shouldCompleteAtThePlannedBoundaryWhenCopiedAudioHasAKnownEarlyEnd() throws Exception {
+    var completed = events.collect(JobAttemptCompletedEvent.class);
+    var source =
+        worker.generateMedia(sourceRoot.resolve("movie.mp4"), soundedSourceArguments(24, 10));
+    try (var playback = new PlaybackRig(autoPlayback(source, probe(source)))) {
+      var started = accepted(playback.sessions.start(playback.command));
+      var session = ((PlaybackFormatAttempt.Ready) started.currentFormatAttempt()).session();
+      assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+      assertThat(session.getFixedMediaEnd()).contains(Duration.ofSeconds(12));
+      var initialization = StoredSegments.bytes(playback.deliverDefault(session, "init.mp4"));
+      var first = StoredSegments.bytes(playback.deliverDefault(session, "segment0.m4s"));
+      var last = StoredSegments.bytes(playback.deliverDefault(session, "segment1.m4s"));
+      var completion = completed.poll(15, TimeUnit.SECONDS);
+
+      assertThat(completion).isNotNull();
+      assertThat(completion.streamSessionId()).isEqualTo(session.getSessionId());
+      assertThat(completion.streamEnds()).isEmpty();
+      assertThat(completion.sourceEndedEarly()).isEmpty();
+      assertThat(session.getNormalEnd()).isEmpty();
+      assertThat(
+              playback
+                  .sessions
+                  .access(playback.requestFor(started))
+                  .orElseThrow()
+                  .formatAttemptCount())
+          .isOne();
+      assertThat(
+              playback.playlists.generateMediaPlaylist(
+                  session, StreamSession.defaultVariant(), "test-token"))
+          .contains("segment0.m4s", "segment1.m4s", "#EXT-X-ENDLIST")
+          .doesNotContain("segment2.m4s");
+      var served =
+          Files.write(
+              sourceRoot.resolve("served.mp4"), combine(combine(initialization, first), last));
+      assertThat(worker.decodedVideoFrameCount(served)).isEqualTo(12 * 24);
     }
   }
 
@@ -528,6 +566,7 @@ class WorkerPlaybackRecoveryIT {
               .runtimeRegistry(registry)
               .producerLifecycle(lifecycle.lifecycle())
               .deliveryCoordinator(delivery)
+              .unservedSegments(lifecycle.unservedSegments())
               .build();
       sessions =
           PlaybackSessionService.builder()

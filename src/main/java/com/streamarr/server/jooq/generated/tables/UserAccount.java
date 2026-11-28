@@ -48,6 +48,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -143,7 +144,7 @@ public class UserAccount extends TableImpl<UserAccountRecord> {
     }
 
     private UserAccount(Name alias, Table<UserAccountRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -196,7 +197,7 @@ public class UserAccount extends TableImpl<UserAccountRecord> {
 
         @Override
         public UserAccountPath as(Table<?> alias) {
-            return new UserAccountPath(alias.getQualifiedName(), this);
+            return new UserAccountPath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -445,7 +446,7 @@ public class UserAccount extends TableImpl<UserAccountRecord> {
 
     @Override
     public UserAccount as(Table<?> alias) {
-        return new UserAccount(alias.getQualifiedName(), this);
+        return new UserAccount(alias.getUnqualifiedName(), this);
     }
 
     /**

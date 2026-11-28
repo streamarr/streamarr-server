@@ -6,6 +6,7 @@ import com.streamarr.server.domain.media.SourceFileSnapshot;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -13,6 +14,7 @@ import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.NonNull;
@@ -25,7 +27,10 @@ import lombok.NonNull;
  * names one. {@code audioChannelLayout} is the first audio stream's channel layout as ffprobe names
  * it, and is empty when the probe stored none, which every version before 7 does. {@code
  * sourceSnapshot} names the source file that the stored outcome describes, and is empty for a probe
- * that playback did not read from a stored outcome.
+ * that playback did not read from a stored outcome. {@code scannedEndTimes} holds, by stream index,
+ * each end time that a keyframe packet scan read from the stream's packets. {@code
+ * streamsWithLearnedEnds} holds the index of each stream whose end time only a job attempt
+ * reported.
  */
 @Builder(toBuilder = true)
 public record MediaProbe(
@@ -45,7 +50,19 @@ public record MediaProbe(
     @NonNull KeyframeKnowledge keyframes,
     @NonNull Optional<VideoPlaybackFacts> videoPlaybackFacts,
     @NonNull Optional<StreamMeasurements> streamMeasurements,
-    @NonNull Optional<SourceFileSnapshot> sourceSnapshot) {
+    @NonNull Optional<SourceFileSnapshot> sourceSnapshot,
+    @NonNull Map<Integer, Duration> scannedEndTimes,
+    @NonNull Set<Integer> streamsWithLearnedEnds) {
+
+  /**
+   * The least time by which a container's duration must run past the scanned media end before the
+   * server reads the file as cut short. A healthy file's packets can end a little before its last
+   * sample does: a Matroska file counts packet times in whole milliseconds, and a track's last
+   * packet can state less time than its frame decodes to. The differences measured with the pinned
+   * FFmpeg were 0.7 ms (FLAC) and 4.56 ms (AC-3), so 1 s is far more than any audio frame, and far
+   * less than the error that a cut file's header makes.
+   */
+  static final Duration LEAST_HEADER_OVERSTATEMENT = Duration.ofSeconds(1);
 
   // ffprobe's names for PGS, VobSub and DVB subtitles.
   private static final Set<String> IMAGE_SUBTITLE_CODECS =
@@ -57,6 +74,7 @@ public record MediaProbe(
   private static final int STANDARD_DEFINITION_HEIGHT = 576;
 
   public MediaProbe {
+    streamsWithLearnedEnds = Set.copyOf(streamsWithLearnedEnds);
     if (audioChannels == null) {
       audioChannels = OptionalInt.empty();
     }
@@ -66,6 +84,8 @@ public record MediaProbe(
     if (streams == null) {
       streams = List.of();
     }
+
+    scannedEndTimes = Map.copyOf(scannedEndTimes);
   }
 
   // Lombok builder defaults — its generated setters assign them
@@ -78,6 +98,8 @@ public record MediaProbe(
     private Optional<VideoPlaybackFacts> videoPlaybackFacts = Optional.empty();
     private Optional<StreamMeasurements> streamMeasurements = Optional.empty();
     private Optional<SourceFileSnapshot> sourceSnapshot = Optional.empty();
+    private Map<Integer, Duration> scannedEndTimes = Map.of();
+    private Set<Integer> streamsWithLearnedEnds = Set.of();
   }
 
   /**
@@ -325,18 +347,119 @@ public record MediaProbe(
   }
 
   /**
-   * Whether the chosen video stream ends at least {@code margin} before another stream of the
-   * source ends, by their probed end times (ADR 0037, early ends). The probe states end times for
-   * audio and video streams only. A stream whose end time the probe does not state never ends
-   * early, and never makes another stream end early.
+   * Where the media that a stream session delivers ends: the later of the end times that a keyframe
+   * packet scan read from the packets of the chosen video stream and of the session's audio stream,
+   * or the video's alone in a file without audio (ADR 0037, early ends). Every variant's media
+   * playlist and every job attempt end there, so a stream that ends first is held or padded up to
+   * it, and no copy is advertised past it. While no scan has read the end time of one of those
+   * streams, the media ends at the container's duration. An end time that only the container header
+   * states for a stream never moves the media's end, and neither does one that a job attempt
+   * reported: an attempt's FFmpeg can stop at a read error and still complete, where a scan fails.
+   * The container's duration also stands while it runs less than {@link
+   * #LEAST_HEADER_OVERSTATEMENT} past the scanned end, so a healthy file is never advertised
+   * shorter than its header states. The end counts up to the next whole millisecond, the unit of
+   * the segment list, so the list never ends before the last sample does. A direct-play stream
+   * session reads {@link #directPlayMediaEnd} instead.
+   */
+  public Duration mediaEnd() {
+    var sessionAudio = sessionAudioStream().stream().toList();
+    return mediaEndWith(sessionAudio);
+  }
+
+  /**
+   * Where the media that a direct-play stream session delivers ends: the media end, read from the
+   * chosen video stream and every audio stream of the file instead of the session's audio stream
+   * alone. Direct play sends the whole file, and a player that can select an audio track inside it
+   * switches tracks without telling the server (ADR 0045). While no scan has read the end time of
+   * one of those streams, the media ends at the container's duration.
+   */
+  public Duration directPlayMediaEnd() {
+    return mediaEndWith(audioStreams());
+  }
+
+  private Duration mediaEndWith(List<StreamInfo> deliveredAudio) {
+    var end =
+        scannedEndOf(deliveredAudio)
+            .filter(scannedEnd -> !headerAgreesWith(scannedEnd))
+            .orElse(duration);
+    return countedUpToAWholeMillisecond(end);
+  }
+
+  private static Duration countedUpToAWholeMillisecond(Duration time) {
+    var countedDown = Duration.ofMillis(time.toMillis());
+    if (countedDown.equals(time)) {
+      return time;
+    }
+
+    return countedDown.plusMillis(1);
+  }
+
+  // A scanned end past the container's duration replaces it: that header understates the file.
+  private boolean headerAgreesWith(Duration scannedEnd) {
+    var overstatement = duration.minus(scannedEnd);
+    return !overstatement.isNegative() && overstatement.compareTo(LEAST_HEADER_OVERSTATEMENT) < 0;
+  }
+
+  // The latest scanned end of the chosen video stream and of each delivered audio stream, or empty
+  // while no scan has read one of them.
+  private Optional<Duration> scannedEndOf(List<StreamInfo> deliveredAudio) {
+    var latest = chosenVideoStream().flatMap(this::scannedEndTimeOf);
+    for (var audio : deliveredAudio) {
+      latest =
+          latest.flatMap(end -> scannedEndTimeOf(audio).map(audioEnd -> laterOf(audioEnd, end)));
+    }
+
+    return latest;
+  }
+
+  private static Duration laterOf(Duration first, Duration second) {
+    if (first.compareTo(second) > 0) {
+      return first;
+    }
+
+    return second;
+  }
+
+  private Optional<Duration> scannedEndTimeOf(StreamInfo stream) {
+    return Optional.ofNullable(scannedEndTimes.get(stream.index()));
+  }
+
+  /**
+   * Whether the chosen video stream's probed end time lies at least {@code margin} before both the
+   * {@link #mediaEnd}, to which every media playlist of the session runs, and the latest end time
+   * that the rule counts (ADR 0037, early ends). Where a keyframe packet scan read the ends of the
+   * two streams that the session delivers, the rule counts only those two ends, so no other stream
+   * of the file, such as an audio track that the session does not play, makes the video end early.
+   * That holds also while the container's duration stands as the media end, because it runs less
+   * than {@link #LEAST_HEADER_OVERSTATEMENT} past the later scanned end. Where no scan read them,
+   * the media end is the container's duration, and the rule counts the end that the probe states
+   * for every stream of the file, so the video ends early only when another stream's stated end
+   * also lies that far past it. A container's duration that runs past every stream's end therefore
+   * never makes a stream end early by itself. A stream whose end time the probe does not state
+   * never ends early.
    */
   public boolean videoEndsEarly(@NonNull Duration margin) {
     return endsEarly(chosenVideoStream(), margin);
   }
 
-  /** Whether the session's audio stream ends early, by the rule of {@link #videoEndsEarly}. */
+  /**
+   * Whether the session's audio stream ends at least {@code margin} before both the media end and
+   * the latest end time that the rule counts, by the rule of {@link #videoEndsEarly}.
+   */
   public boolean sessionAudioEndsEarly(@NonNull Duration margin) {
-    return endsEarly(audioStreams().stream().findFirst(), margin);
+    return endsEarly(sessionAudioStream(), margin);
+  }
+
+  // The session plays the first audio stream that the probe lists.
+  private Optional<StreamInfo> sessionAudioStream() {
+    return audioStreams().stream().findFirst();
+  }
+
+  /** The selected audio's header or scanned end, excluding an end learned by a job attempt. */
+  public Optional<Duration> probedSessionAudioEnd() {
+    return sessionAudioStream()
+        .filter(stream -> !streamsWithLearnedEnds.contains(stream.index()))
+        .flatMap(StreamInfo::endTime);
   }
 
   private Optional<StreamInfo> chosenVideoStream() {
@@ -345,38 +468,75 @@ public record MediaProbe(
   }
 
   private boolean endsEarly(Optional<StreamInfo> stream, Duration margin) {
-    if (stream.isEmpty() || stream.get().endTime().isEmpty()) {
-      return false;
-    }
+    var sourceEnd = advertisedSourceEnd();
+    return stream
+        .flatMap(StreamInfo::endTime)
+        .filter(end -> sourceEnd.compareTo(end.plus(margin)) >= 0)
+        .isPresent();
+  }
 
-    var earliestLaterEnd = stream.get().endTime().get().plus(margin);
+  // The earlier of the media end and the latest end time that the rule counts: the later scanned
+  // end of the two delivered streams, or, until a scan has read both, the latest end time that the
+  // probe states for a stream of the file.
+  private Duration advertisedSourceEnd() {
+    var mediaEnd = mediaEnd();
+    return scannedEndOf(sessionAudioStream().stream().toList())
+        .or(this::latestStatedEnd)
+        .filter(latestEnd -> latestEnd.compareTo(mediaEnd) < 0)
+        .orElse(mediaEnd);
+  }
+
+  private Optional<Duration> latestStatedEnd() {
     return streams.stream()
-        .filter(other -> other.index() != stream.get().index())
-        .flatMap(other -> other.endTime().stream())
-        .anyMatch(end -> end.compareTo(earliestLaterEnd) >= 0);
+        .flatMap(stream -> stream.endTime().stream())
+        .max(Comparator.naturalOrder());
   }
 
   /**
-   * This probe with each learned end time in place of the end time that a stream's container header
-   * does not state (ADR 0037, early ends). A stated end time stays.
+   * This probe with each learned end time as its stream's end time (ADR 0037, early ends). An end
+   * time that a keyframe packet scan read replaces the end time that the container header states,
+   * because the header of a truncated file states the length of the whole file. An end time that a
+   * job attempt learned only fills an end time that the header does not state, because the
+   * attempt's FFmpeg can stop at a read error and still complete. Only the end times that a
+   * keyframe packet scan read count toward {@link #mediaEnd}.
    */
   public MediaProbe withLearnedEndTimes(@NonNull List<LearnedStreamEnd> learned) {
     var learnedByIndex =
         learned.stream()
+            .collect(Collectors.toMap(LearnedStreamEnd::streamIndex, Function.identity()));
+    var scannedByIndex =
+        learned.stream()
+            .filter(LearnedStreamEnd::fromPacketScan)
             .collect(Collectors.toMap(LearnedStreamEnd::streamIndex, LearnedStreamEnd::endTime));
     var withLearned =
         streams.stream().map(stream -> withLearnedEndTime(stream, learnedByIndex)).toList();
-    return toBuilder().streams(withLearned).build();
+    var learnedIndices = new HashSet<>(streamsWithLearnedEnds);
+    streams.stream()
+        .filter(stream -> stream.endTime().isEmpty())
+        .map(StreamInfo::index)
+        .filter(learnedByIndex::containsKey)
+        .filter(index -> !learnedByIndex.get(index).fromPacketScan())
+        .forEach(learnedIndices::add);
+    learnedIndices.removeAll(scannedByIndex.keySet());
+    return toBuilder()
+        .streams(withLearned)
+        .scannedEndTimes(scannedByIndex)
+        .streamsWithLearnedEnds(learnedIndices)
+        .build();
   }
 
   private static StreamInfo withLearnedEndTime(
-      StreamInfo stream, Map<Integer, Duration> learnedByIndex) {
+      StreamInfo stream, Map<Integer, LearnedStreamEnd> learnedByIndex) {
     var learned = learnedByIndex.get(stream.index());
-    if (stream.endTime().isPresent() || learned == null) {
+    if (learned == null) {
       return stream;
     }
 
-    return stream.toBuilder().endTime(Optional.of(learned)).build();
+    if (stream.endTime().isPresent() && !learned.fromPacketScan()) {
+      return stream;
+    }
+
+    return stream.toBuilder().endTime(Optional.of(learned.endTime())).build();
   }
 
   /** Whether the probe lists the stream and its container header states no end time for it. */

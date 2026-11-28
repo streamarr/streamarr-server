@@ -11,11 +11,19 @@ public final class ProbeVersion {
   // Version 5 adds the frame facts below. Version 6 adds the video and audio bitrates that the
   // worker reads from a Matroska file's trusted statistics tags, and whether a copy of an H.264 or
   // HEVC video stream keeps every packet's bytes. Version 7 adds the audio facts and the source
-  // facts below. Version 8 adds the maximum frame rate and the RPU facts below. Each version
-  // includes the facts of every earlier version. Version 2 is unused. V097 deleted every result
-  // before version 4; an earlier result stays playable until the re-scan stores the file's current
-  // result.
-  public static final int CURRENT = 8;
+  // facts below. Version 8 adds the maximum frame rate and the RPU facts below. Version 9 adds the
+  // scanned stream ends below. Each version includes the facts of every earlier version. Version 2
+  // is unused. V097 deleted every result before version 4; an earlier result stays playable until
+  // the re-scan stores the file's current result.
+  public static final int CURRENT = 9;
+
+  // The first probe version whose keyframe positions count from the current media time zero, the
+  // container start time that the probe reads (ADR 0032). Every version from this one through
+  // CURRENT places media time zero at the same instant, so the positions that a keyframe packet
+  // scan read under one of them stay valid under the others. A probe version that moves media time
+  // zero takes this constant, and the server then drops the positions that an earlier version's
+  // scan read. Version 3 is the first to report keyframe positions.
+  public static final int FIRST_ON_CURRENT_KEYFRAME_TIMELINE = 3;
 
   public static final int FIRST_TO_REPORT_CHAPTERS = 4;
 
@@ -42,8 +50,17 @@ public final class ProbeVersion {
   // the MaxCLL and MaxFALL of its RPUs' level 6 block.
   public static final int FIRST_TO_REPORT_MAXIMUM_FRAME_RATE_AND_RPU_FACTS = 8;
 
+  // Where the chosen video stream and each audio stream ends, as a keyframe packet scan read
+  // every packet of them.
+  public static final int FIRST_TO_REPORT_SCANNED_STREAM_ENDS = 9;
+
   // A worker that lists this version or a later one encodes each audio track in the layout that the
   // job names. The server sends a job that names a layout of 3, 4, 7 or 8 channels only to such a
   // worker.
   public static final int FIRST_TO_ENCODE_NAMED_LAYOUTS = 7;
+
+  /** Whether the probe version places media time zero where the current probe version does. */
+  public static boolean isOnCurrentKeyframeTimeline(int probeVersion) {
+    return probeVersion >= FIRST_ON_CURRENT_KEYFRAME_TIMELINE;
+  }
 }

@@ -1,15 +1,27 @@
 package com.streamarr.server.fakes;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
+import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
+import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
+import com.streamarr.server.support.BoundedTask;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -29,6 +41,96 @@ class FakeMediaFileContainerInfoRepositoryConcurrencyTest {
       new SourceFileSnapshot(10, Instant.parse("2026-09-10T00:00:00Z"));
   private static final SourceFileSnapshot NEW_SOURCE =
       new SourceFileSnapshot(20, Instant.parse("2026-09-11T00:00:00Z"));
+  private static final Duration BOUND = Duration.ofSeconds(5);
+
+  @ParameterizedTest(name = "scan failed: {0}")
+  @ValueSource(booleans = {true, false})
+  @DisplayName("Should reject a packet scan publication when the probe that required it rolls back")
+  void shouldRejectPacketScanPublicationWhenProbeThatRequiredItRollsBack(boolean scanFailed)
+      throws Exception {
+    var mediaFileId = UUID.randomUUID();
+    var repository = new FakeMediaFileContainerInfoRepository();
+    var required =
+        new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX);
+    var earlier =
+        publication(mediaFileId)
+            .snapshot(OLD_SOURCE)
+            .probeVersion(ProbeVersion.CURRENT - 1)
+            .outcome(
+                ProbeOutcome.Success.builder()
+                    .container(ProbeContainer.builder().build())
+                    .streams(List.of(StreamInfo.builder().index(0).codecType("video").build()))
+                    .keyframes(required)
+                    .build())
+            .build();
+    assertThat(repository.publish(earlier)).isTrue();
+    var replacement =
+        publication(mediaFileId).snapshot(OLD_SOURCE).outcome(earlier.outcome()).build();
+    var published = new CountDownLatch(1);
+    var rollBack = new CountDownLatch(1);
+    var rejection = new IllegalStateException("probe publication rejected");
+
+    try (var rejected =
+        BoundedTask.start(
+            () ->
+                repository.rollBackOnFailure(
+                    mediaFileId,
+                    () -> {
+                      assertThat(repository.publish(replacement)).isTrue();
+                      published.countDown();
+                      awaitRelease(rollBack);
+                      throw rejection;
+                    }))) {
+      assertThat(published.await(5, TimeUnit.SECONDS)).isTrue();
+      try (var scanned =
+          BoundedTask.start(() -> publishPacketScanResult(repository, mediaFileId, scanFailed))) {
+        rollBackAfterScanWaits(repository, mediaFileId, rollBack);
+
+        assertThatThrownBy(() -> rejected.await(BOUND)).isSameAs(rejection);
+        assertThat(scanned.await(BOUND)).isFalse();
+      }
+    }
+
+    assertThat(repository.findByMediaFileId(mediaFileId))
+        .hasValueSatisfying(
+            row -> assertThat(row.getProbeVersion()).isEqualTo(ProbeVersion.CURRENT - 1));
+    assertThat(repository.findKeyframeKnowledge(mediaFileId)).contains(required);
+  }
+
+  private static void rollBackAfterScanWaits(
+      FakeMediaFileContainerInfoRepository repository, UUID mediaFileId, CountDownLatch rollBack)
+      throws InterruptedException {
+    try {
+      repository.awaitBlockedWrites(mediaFileId, 1, BOUND);
+    } finally {
+      rollBack.countDown();
+    }
+  }
+
+  private static boolean publishPacketScanResult(
+      FakeMediaFileContainerInfoRepository repository, UUID mediaFileId, boolean scanFailed) {
+    if (scanFailed) {
+      return repository.publishKeyframePacketScanFailure(
+          mediaFileId, new ProbeInputs(OLD_SOURCE, ProbeVersion.CURRENT));
+    }
+
+    return repository.publishKeyframePacketScan(
+        KeyframePacketScanPublication.builder()
+            .mediaFileId(mediaFileId)
+            .snapshot(OLD_SOURCE)
+            .probeVersion(ProbeVersion.CURRENT)
+            .keyframes(new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.NO_KEYFRAMES))
+            .build());
+  }
+
+  private static void awaitRelease(CountDownLatch release) {
+    try {
+      assertThat(release.await(10, TimeUnit.SECONDS)).isTrue();
+    } catch (InterruptedException _) {
+      Thread.currentThread().interrupt();
+      throw new CancellationException("probe publication interrupted");
+    }
+  }
 
   @Test
   @DisplayName("Should retain a matching publication when its request is recorded concurrently")

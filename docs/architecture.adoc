@@ -155,7 +155,7 @@ Item failures never change the library's status.
 |db-scheduler, with backoff capped at five minutes, for failed attempts
 
 |Keyframe packet scan
-|`media_file_container_info.keyframe_status` and `media_file_keyframe_positions` on the outcome that asked for the scan; `PACKET_SCAN_FAILED` after three scans that timed out or reported no keyframes; other failures in the `media-file-keyframe-scan` task in `keyframe_scan_scheduled_tasks`
+|`media_file_container_info.keyframe_status` and `media_file_keyframe_positions` on the outcome that asked for the scan; `NO_KEYFRAMES` immediately when a completed scan reports no keyframes; after three scans that timed out, broke the worker contract, or returned no keyframe result, `PACKET_SCAN_FAILED` when no positions were kept, or `KNOWN` with the positions that the outcome kept from an earlier probe version's scan; other failures in the `media-file-keyframe-scan` task in `keyframe_scan_scheduled_tasks`
 |A db-scheduler of its own, with backoff capped at five minutes; the next library scan requests a scan that the outcome still needs
 |===
 
@@ -343,8 +343,11 @@ The worker contract lets a job that encodes audio name its output channel layout
 The server names the output layout of every audio encode, and sets no sample rate or bit depth yet.
 Version 8 adds the maximum frame rate of the chosen video stream: the highest rate that its presentation times show over 1 to 24 consecutive frame intervals, or the base rate its declared rates agree on when no time proves a faster one, or none when the worker cannot measure it or the stream is interlaced.
 For a Dolby Vision stream, version 8 also adds the enhancement layer that the RPUs' NLQ parameters describe, none, MEL or FEL, and MaxCLL and MaxFALL from the first RPU's level 6 block.
+Version 9 adds where the chosen video stream and each audio stream ends, which a keyframe packet scan reads from the stream's packets and reports beside the keyframe positions.
+Multiplexed HLS that copies a selected audio track with a header or scanned end ends at the end of the segment containing its last audio, bounded by the otherwise selected media end and fixed across format recovery (https://github.com/streamarr/streamarr-adr/blob/main/adr/0064-copied-audio-ends-playback-at-its-last-segment.adoc[ADR 0064]).
+Other sessions use the latest scanned end among the streams they deliver, with the container-duration fallback until every delivered stream's end is known.
 Version 2 is unused.
-The server requests version 8.
+The server requests version 9.
 After the version rises, the server scans each library that holds a result of an earlier version at startup.
 Playback keeps using a file's earlier result until the scan stores the file's new result.
 

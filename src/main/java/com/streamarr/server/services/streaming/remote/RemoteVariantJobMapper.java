@@ -5,6 +5,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.streamarr.server.domain.streaming.AssumedSourceMatrix;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ChannelLayout;
 import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
 import com.streamarr.server.domain.streaming.ContentLightLevel;
@@ -192,6 +193,11 @@ final class RemoteVariantJobMapper {
             .setSourceCodecFamily(sourceCodecFamily(source))
             .setSourcePacketsCarryPresentationTimes(sourcePacketsCarryPresentationTimes(source))
             .setCopyKeepsPacketBytes(copyKeepsPacketBytes(source));
+    if (decision.videoBitstreamRewrites().contains(BitstreamRewrite.NAME_ASSUMED_SOURCE_MATRIX)) {
+      video.setAssumedSourceMatrix(
+          matrixCoefficients(decision.assumedSourceMatrix().orElseThrow()));
+    }
+
     plannedCopyOutput(video, decision.plannedVideoOutput());
     return video.build();
   }
@@ -298,6 +304,11 @@ final class RemoteVariantJobMapper {
                     : VideoMode.VIDEO_MODE_ENCODE)
             .setCodecFamily(codecFamily(decision.videoCodecFamily()))
             .setSoftwareEncoder(decision.softwareEncoder());
+    if (decision.videoBitstreamRewrites().contains(BitstreamRewrite.NAME_ASSUMED_SOURCE_MATRIX)) {
+      video.setAssumedSourceMatrix(
+          matrixCoefficients(decision.assumedSourceMatrix().orElseThrow()));
+    }
+
     plannedCopyOutput(video, decision.plannedVideoOutput());
     plannedEncodeOutput(video, decision);
     return com.streamarr.transcode.v1.TranscodeDecision.newBuilder()
@@ -386,10 +397,9 @@ final class RemoteVariantJobMapper {
                 execution
                     .addAllSegmentStartTicks(starts.ticks())
                     .setSegmentStartTimeBase(fraction(starts.timeBase())));
-    if (holdsLastFrame(request) || padsWithSilence(request)) {
-      execution.setAdvertisedEnd(protobufDuration(request.advertisedEnd().orElseThrow()));
-    }
-
+    // Each job attempt carries the media end as the advertised end, a copy's included, and the
+    // last listed segment's audio ends there (ADR 0037, media end).
+    request.advertisedEnd().ifPresent(end -> execution.setAdvertisedEnd(protobufDuration(end)));
     return execution.build();
   }
 

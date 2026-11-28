@@ -15,9 +15,11 @@ public class StreamingShutdownHook {
 
   private final StreamingService streamingService;
   private final PlaybackSessionService playbackSessionService;
+  private final UnservedSegments unservedSegments;
 
   @PreDestroy
   public void onShutdown() {
+    unservedSegments.serverShutdownBegins();
     closePlaybackSessions();
     var sessions = streamingService.getAllSessions();
     if (sessions.isEmpty()) {

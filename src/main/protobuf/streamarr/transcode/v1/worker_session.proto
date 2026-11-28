@@ -314,6 +314,13 @@ enum BitstreamRewrite {
   // The worker converts single-track Dolby Vision profile 7 to profile 8.1.
   // streamarr/streamarr-server#651 defines this rewrite.
   BITSTREAM_REWRITE_CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1 = 4;
+  // An H.264 copy names assumed_source_matrix in every SPS (avcC and samples)
+  // and one replacement nclx colr box (ADR 0013, copy-names-assumed-matrix).
+  // SPS primaries, transfer and range stay; absent descriptions gain unspecified
+  // primaries/transfer. The box takes the first avcC SPS's values, substituting
+  // BT.709 for unspecified primaries/transfer and limited for unstated range.
+  // An unreadable SPS fails the attempt as an output mismatch.
+  BITSTREAM_REWRITE_NAME_ASSUMED_SOURCE_MATRIX = 5;
 }
 
 // This value names something a copy can need beyond passing the source's
@@ -560,10 +567,11 @@ message VideoDecision {
   // the worker then writes 4:2:0. A PQ or HLG encode always sets it.
   ChromaSubsampling output_chroma_subsampling = 21;
   // BT709 or SMPTE170M: the matrix with which an encode that does not tone-map
-  // reads a source whose probe result names no matrix (ADR 0013). UNSPECIFIED
-  // on every other job: the worker then reads each frame with the matrix that
-  // the frame names. The worker refuses any other value, a copy that sets the
-  // field, and a source whose compatible base is PQ, HLG or NONE.
+  // reads a source whose probe result names no matrix (ADR 0013). An H.264
+  // copy sets it exactly when it lists NAME_ASSUMED_SOURCE_MATRIX. UNSPECIFIED
+  // on every other job: an encode then reads each frame's named matrix, and
+  // a copy preserves the source's colour description. The worker refuses any
+  // other value and a source whose compatible base is PQ, HLG or NONE.
   MatrixCoefficients assumed_source_matrix = 22;
 }
 
@@ -649,9 +657,9 @@ message TranscodeExecution {
   // it. A copy leaves it out.
   Fraction output_frame_rate = 7;
   // This field holds the end of the variant's last advertised media segment,
-  // on seek_position's timeline. The server sets it on every job that holds the
-  // last frame or pads audio. No padded frame starts at or after it (ADR 0037,
-  // early ends).
+  // on seek_position's timeline: the media end. The server sets it on every job.
+  // A job that holds the last frame or pads audio requires it. No padded frame
+  // starts at or after it (ADR 0037, media end and early ends).
   google.protobuf.Duration advertised_end = 8;
   reserved 9;
   reserved "segment_start_slots";
@@ -786,12 +794,14 @@ message SourceStreamWithoutSamples {
   google.protobuf.Duration read_from = 2;
 }
 
-// This message reports where one chosen source stream ended.
+// This message reports where one source stream ended.
 message SourceStreamEnd {
   // This field holds the stream's ProbeStreamInfo.index.
   optional uint32 stream_index = 1;
-  // This field holds the end of the stream's last sample, on seek_position's
-  // timeline. The worker reads it from the source, not from the probe.
+  // This field holds the latest end of the stream's samples, on seek_position's
+  // timeline, which is also the probe report's keyframe timeline. A sample
+  // ends at its presentation time plus its duration. The worker reads it from
+  // the source's packets, not from the container header.
   google.protobuf.Duration end_time = 2;
 }
 
@@ -1277,12 +1287,12 @@ message ProbeStreamInfo {
   // is absent in other source containers, which store no sample entry, for a
   // stream without one, such as cover art, and on other streams (ADR 0032).
   optional string sample_entry = 48;
-  // From probe version 8, the chosen video stream reports, in frames per
-  // second, the highest rate its presentation times show over 1 to 24
-  // consecutive frame intervals, a listed rate when one fits their precision,
-  // or the base rate its declared rates agree on when no time proves a faster
-  // one. It is absent when the worker cannot measure it, on an interlaced
-  // stream and on every other stream. It is never zero (ADR 0032).
+  // From probe version 8, the chosen video's maximum frame rate, in frames per
+  // second. Version 9 requires 24 consecutive picture intervals, each
+  // supporting the measured rate within timestamp precision (ADR 0032).
+  // A listed rate within one-tick precision is used; the agreeing declared
+  // base rate remains the floor. Absent when unknown, interlaced, or not the
+  // chosen video stream; never zero.
   Fraction maximum_frame_rate = 49;
 }
 
@@ -1472,15 +1482,17 @@ message ProbeKeyframes {
   }
 }
 
-// This value names the step that measured a file's streams (ADR 0054).
+// This value names the step that measured a file's streams (ADR 0054). A probe
+// result names the step that also read its KeyframePositions.
 enum StreamMeasurementSource {
   STREAM_MEASUREMENT_SOURCE_UNSPECIFIED = 0;
   // The probe read the sample tables of an MP4 or MOV file that is not
-  // fragmented.
+  // fragmented, beside KeyframePositions of a CONTAINER_INDEX.
   STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE = 1;
-  // A keyframe packet scan listed every packet.
+  // A keyframe packet scan listed every packet, on the keyframes of its own
+  // KeyframePositions of a PACKET_SCAN.
   STREAM_MEASUREMENT_SOURCE_KEYFRAME_PACKET_SCAN = 2;
-  // A bitrate scan listed every packet.
+  // A bitrate scan listed every packet. No probe result names this step.
   STREAM_MEASUREMENT_SOURCE_BITRATE_SCAN = 3;
 }
 
@@ -1534,6 +1546,13 @@ message ProbeMediaInfo {
   bool stream_titles_omitted = 6;
   // The worker leaves this field out when it measured no stream (ADR 0054).
   StreamMeasurements stream_measurements = 7;
+  // This field lists, at most once each, where the chosen video stream and each
+  // audio stream ends, as a keyframe packet scan read their packets. Probe
+  // version 9 and later report it, only beside KeyframePositions of a
+  // PACKET_SCAN. A packet without a presentation time counts at its decode
+  // time. The worker leaves out a stream whose end it could not read or whose
+  // end is not above zero. ADR 0037, early ends, lists what the server refuses.
+  repeated SourceStreamEnd stream_ends = 8;
 }
 
 message ProbeAttemptResult {

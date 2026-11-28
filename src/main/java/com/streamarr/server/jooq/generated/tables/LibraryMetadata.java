@@ -34,6 +34,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -84,7 +85,7 @@ public class LibraryMetadata extends TableImpl<LibraryMetadataRecord> {
     }
 
     private LibraryMetadata(Name alias, Table<LibraryMetadataRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -137,7 +138,7 @@ public class LibraryMetadata extends TableImpl<LibraryMetadataRecord> {
 
         @Override
         public LibraryMetadataPath as(Table<?> alias) {
-            return new LibraryMetadataPath(alias.getQualifiedName(), this);
+            return new LibraryMetadataPath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -185,7 +186,7 @@ public class LibraryMetadata extends TableImpl<LibraryMetadataRecord> {
 
     @Override
     public LibraryMetadata as(Table<?> alias) {
-        return new LibraryMetadata(alias.getQualifiedName(), this);
+        return new LibraryMetadata(alias.getUnqualifiedName(), this);
     }
 
     /**

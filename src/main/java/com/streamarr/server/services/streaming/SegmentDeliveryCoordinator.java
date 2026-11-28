@@ -17,6 +17,7 @@ public class SegmentDeliveryCoordinator {
   private final ProducerLifecycleService producerLifecycle;
   private final HeldSegmentRequests heldRequests;
   @NonNull private final ApplicationEventPublisher eventPublisher;
+  @NonNull private final UnservedSegments unservedSegments;
 
   /**
    * Answers one segment request. Before the wait, the request applies the on-demand rules of ADR
@@ -138,10 +139,13 @@ public class SegmentDeliveryCoordinator {
   }
 
   private SegmentDelivery tryRead(UUID sessionId, String segmentName) {
-    return segmentStore
-        .openSegment(sessionId, segmentName)
-        .map(SegmentDelivery.Ready::new)
-        .orElse(null);
+    var segment = segmentStore.openSegment(sessionId, segmentName);
+    if (segment.isEmpty()) {
+      return null;
+    }
+
+    unservedSegments.served(sessionId, segmentName);
+    return new SegmentDelivery.Ready(segment.get());
   }
 
   private boolean tryAwait(HeldSegmentRequests.Wake wake, SegmentRequest request) {

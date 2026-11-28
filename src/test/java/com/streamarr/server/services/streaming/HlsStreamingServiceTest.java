@@ -37,8 +37,11 @@ import com.streamarr.server.domain.language.LanguageOverrideChange;
 import com.streamarr.server.domain.language.OverrideFieldChange;
 import com.streamarr.server.domain.language.ProfileLanguagePreferences;
 import com.streamarr.server.domain.media.Episode;
+import com.streamarr.server.domain.media.LearnedStreamEnd;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
@@ -66,6 +69,7 @@ import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
@@ -78,6 +82,7 @@ import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.SourceContainer;
+import com.streamarr.server.domain.streaming.SourceStreamEnd;
 import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamMeasurementSource;
@@ -98,6 +103,8 @@ import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.streaming.VideoSampleEntry;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
+import com.streamarr.server.domain.task.KeyframePacketScanPublication;
+import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TranscodeException;
@@ -105,6 +112,7 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeLanguagePreferenceRepository;
+import com.streamarr.server.fakes.FakeLearnedStreamEndRepository;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
@@ -185,6 +193,7 @@ class HlsStreamingServiceTest {
   private FakeSegmentStore segmentStore;
   private FakeMediaFileContainerInfoRepository probeResults;
   private CapturingEventPublisher probeEvents;
+  private FakeLearnedStreamEndRepository learnedStreamEnds;
   private FakePlaybackAuthorityGate authorityGate;
   private FakeRuntimeStreamSessionRegistry runtimeRegistry;
   private HlsStreamingService service;
@@ -3577,6 +3586,7 @@ class HlsStreamingServiceTest {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).build());
     probeEvents = new CapturingEventPublisher();
+    learnedStreamEnds = new FakeLearnedStreamEndRepository(probeResults);
     authorityGate = new FakePlaybackAuthorityGate();
     runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
     meters = new SimpleMeterRegistry();
@@ -3609,7 +3619,10 @@ class HlsStreamingServiceTest {
         .transcodeExecutor(executor)
         .segmentStore(segmentStore)
         .playbackProbeService(
-            playbackProbeServiceBuilder(probeResults).eventPublisher(probeEvents).build())
+            playbackProbeServiceBuilder(probeResults)
+                .eventPublisher(probeEvents)
+                .learnedStreamEnds(learnedStreamEnds)
+                .build())
         .transcodeDecisionService(new TranscodeDecisionService(properties, meters))
         .qualityLadderService(new QualityLadderService())
         .properties(properties)
@@ -3617,6 +3630,7 @@ class HlsStreamingServiceTest {
         .runtimeRegistry(registry)
         .producerLifecycle(rig.lifecycle())
         .deliveryCoordinator(rig.coordinator())
+        .unservedSegments(rig.unservedSegments())
         .meterRegistry(meters)
         .languagePreferences(
             (profileId, file) -> languagePreferences.audioLanguagesFor(profileId, file))
@@ -4695,7 +4709,6 @@ class HlsStreamingServiceTest {
                             VideoCodecProfileCapability.builder()
                                 .profile(VideoCodecProfile.HEVC_MAIN_10)
                                 .maxLevel(51)
-                                .maxTier(Optional.of(VideoCodecTier.MAIN))
                                 .build()))
                     .build()));
   }
@@ -5912,7 +5925,14 @@ class HlsStreamingServiceTest {
   }
 
   @ParameterizedTest
-  @CsvSource({"PT0.001S, 1", "PT3S, 1", "PT12S, 2", "PT12.0004S, 2", "PT2M5.5S, 21"})
+  @CsvSource({
+    "PT0.000999999S, 1",
+    "PT0.001S, 1",
+    "PT3S, 1",
+    "PT12S, 2",
+    "PT12.0004S, 2",
+    "PT2M5.5S, 21"
+  })
   @DisplayName(
       "Should advertise the media playlist's segment count to the job attempt when creating"
           + " session")
@@ -5963,8 +5983,7 @@ class HlsStreamingServiceTest {
             new KeyframeKnowledge.NotReported());
     return Stream.of(
         Arguments.of("missing", withoutDuration),
-        Arguments.of("zero", probeLasting(Duration.ZERO)),
-        Arguments.of("under one millisecond", probeLasting(Duration.ofNanos(999_999))));
+        Arguments.of("zero", probeLasting(Duration.ZERO)));
   }
 
   private static ProbeOutcome.Success probeLasting(Duration duration) {
@@ -6608,6 +6627,316 @@ class HlsStreamingServiceTest {
         .videoFormatConstraint(VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE);
   }
 
+  @Test
+  @DisplayName("Should end the playlist at the audio boundary when copied audio has a known end")
+  void shouldEndThePlaylistAtTheAudioBoundaryWhenCopiedAudioHasAKnownEnd() {
+    probeResults.setDefaultProbe(probeWithAudioEnd(Optional.of(Duration.ofSeconds(10))).build());
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getTranscodeDecision().audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.advertisedEnd()).contains(Duration.ofSeconds(13));
+              assertThat(request.mediaSegmentCount()).isEqualTo(2);
+            });
+    assertThat(
+            new HlsPlaylistService(streamingProperties())
+                .generateMediaPlaylist(session, StreamSession.defaultVariant(), "token"))
+        .contains("segment0.m4s", "segment1.m4s", "#EXT-X-ENDLIST")
+        .doesNotContain("segment2.m4s");
+  }
+
+  @Test
+  @DisplayName("Should preserve padded audio recovery when only a job learned the audio end")
+  void shouldPreservePaddedAudioRecoveryWhenOnlyAJobLearnedTheAudioEnd() {
+    probeResults.setDefaultProbe(probeWithAudioEnd(Optional.empty()).build());
+    var file = seedMediaFile();
+    var snapshot = probeResults.findByMediaFileId(file.getId()).orElseThrow().getSnapshot();
+    assertThat(
+            learnedStreamEnds.store(
+                LearnedStreamEnd.builder()
+                    .mediaFileId(file.getId())
+                    .snapshot(snapshot)
+                    .streamIndex(1)
+                    .endTime(Duration.ofSeconds(10))
+                    .build()))
+        .isTrue();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getTranscodeDecision().audioDecision().mode())
+        .isEqualTo(AudioMode.TRANSCODE);
+    assertThat(session.getFixedMediaEnd()).isEmpty();
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(request -> assertThat(request.advertisedEnd()).contains(Duration.ofSeconds(26)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the copied audio boundary when a format recovery changes the segment grid")
+  void shouldKeepTheCopiedAudioBoundaryWhenAFormatRecoveryChangesTheSegmentGrid() {
+    probeResults.setDefaultProbe(probeWithAudioEnd(Optional.of(Duration.ofSeconds(10))).build());
+    var playback = logicalPlayback();
+    var command = logicalStart().build();
+    var initial = accepted(playback.start(command));
+
+    var recovered =
+        playback
+            .reportFormatFailure(
+                ReportPlaybackFormatFailureCommand.builder()
+                    .playbackSessionId(initial.playbackSessionId())
+                    .streamSessionId(initial.currentFormatAttempt().streamSessionId())
+                    .identity(command.identity())
+                    .reason(PlaybackFormatFailure.DECODE_ERROR)
+                    .build())
+            .orElseThrow();
+
+    assertThat(recovered.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> {
+              assertThat(ready.session().getTranscodeDecision().transcodeMode().copiesVideo())
+                  .isFalse();
+              assertThat(ready.session().getTranscodeDecision().audioDecision().mode())
+                  .isEqualTo(AudioMode.COPY);
+              assertThat(ready.session().getMediaEnd()).isEqualTo(Duration.ofSeconds(13));
+            });
+    assertThat(transcodeExecutor.getStartedRequests())
+        .hasSize(2)
+        .allSatisfy(
+            request -> assertThat(request.advertisedEnd()).contains(Duration.ofSeconds(13)));
+  }
+
+  @ParameterizedTest
+  @CsvSource({"13, 1", "20, 1", "100, 1", "20, 0"})
+  @DisplayName(
+      "Should finish without starting a worker when resuming at or past the copied audio boundary")
+  void shouldFinishWithoutStartingAWorkerWhenResumingAtOrPastTheCopiedAudioBoundary(
+      long startSeconds, int availableSlots) {
+    probeResults.setDefaultProbe(probeWithAudioEnd(Optional.of(Duration.ofSeconds(10))).build());
+    transcodeExecutor.setAvailableSlots(availableSlots);
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .startPosition(Optional.of(Duration.ofSeconds(startSeconds)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getNormalEnd()).contains(Duration.ofSeconds(13));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+    assertThat(service.getAllSessions()).containsExactly(session);
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "6500, COPY_OR_ENCODE, 6500",
+    "6501, COPY_OR_ENCODE, 13000",
+    "13000, COPY_OR_ENCODE, 13000",
+    "25000, COPY_OR_ENCODE, 26000",
+    "10000, ENCODE_ONLY, 12000",
+    "6000, ENCODE_ONLY, 6000",
+    "6001, ENCODE_ONLY, 12000"
+  })
+  @DisplayName("Should keep the last audio sample in its segment when choosing the playback end")
+  void shouldKeepTheLastAudioSampleInItsSegmentWhenChoosingThePlaybackEnd(
+      long audioEndMillis, VideoFormatConstraint constraint, long expectedEndMillis) {
+    probeResults.setDefaultProbe(
+        probeWithAudioEnd(Optional.of(Duration.ofMillis(audioEndMillis))).build());
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .videoFormatConstraint(constraint)
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getTranscodeDecision().audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(session.getMediaEnd()).isEqualTo(Duration.ofMillis(expectedEndMillis));
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request ->
+                assertThat(request.advertisedEnd()).contains(Duration.ofMillis(expectedEndMillis)));
+  }
+
+  @ParameterizedTest
+  @CsvSource({"0, 13", "1, 26"})
+  @DisplayName(
+      "Should choose the media end from the selected audio track when tracks end at different times")
+  void shouldChooseTheMediaEndFromTheSelectedAudioTrackWhenTracksEndAtDifferentTimes(
+      int audioTrackPosition, long expectedEndSeconds) {
+    var probe = probeWithAudioEnd(Optional.of(Duration.ofSeconds(10))).build();
+    probeResults.setDefaultProbe(
+        probe.toBuilder()
+            .streams(
+                List.of(
+                    probe.streams().getFirst(),
+                    probe.audioStreams().getFirst(),
+                    probe.audioStreams().getFirst().toBuilder()
+                        .index(2)
+                        .endTime(Optional.of(Duration.ofSeconds(20)))
+                        .build()))
+            .build());
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .audioTrackPosition(OptionalInt.of(audioTrackPosition))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(audioTrackPosition);
+    assertThat(session.getMediaEnd()).isEqualTo(Duration.ofSeconds(expectedEndSeconds));
+  }
+
+  @Test
+  @DisplayName(
+      "Should finish without reserving capacity when an eligible encode resumes past the audio boundary")
+  void shouldFinishWithoutReservingCapacityWhenAnEligibleEncodeResumesPastTheAudioBoundary() {
+    probeResults.setDefaultProbe(probeWithAudioEnd(Optional.of(Duration.ofSeconds(10))).build());
+    transcodeExecutor.setAvailableSlots(0);
+    transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+            .startPosition(Optional.of(Duration.ofSeconds(20)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getNormalEnd()).contains(Duration.ofSeconds(12));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+    assertThat(capacityRefusals("no_encoder_with_free_slot")).isZero();
+  }
+
+  // No stream states its end, so the session has no copied-audio boundary and its media ends at
+  // the container's 26 s.
+  @ParameterizedTest
+  @CsvSource({"26, 1", "40, 1", "26, 0"})
+  @DisplayName(
+      "Should finish without starting a worker when resuming at or past the media end of a session"
+          + " without a copied-audio boundary")
+  void shouldFinishWithoutStartingAWorkerWhenResumingAtOrPastTheMediaEndWithoutABoundary(
+      long startSeconds, int availableSlots) {
+    probeResults.setDefaultProbe(probeWithAudioEnd(Optional.empty()).build());
+    transcodeExecutor.setAvailableSlots(availableSlots);
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .startPosition(Optional.of(Duration.ofSeconds(startSeconds)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getFixedMediaEnd()).isEmpty();
+    assertThat(session.getNormalEnd()).contains(Duration.ofSeconds(26));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+    assertThat(service.getAllSessions()).containsExactly(session);
+  }
+
+  @Test
+  @DisplayName(
+      "Should finish without reserving capacity when an eligible encode resumes past the media end")
+  void shouldFinishWithoutReservingCapacityWhenAnEligibleEncodeResumesPastTheMediaEnd() {
+    probeResults.setDefaultProbe(probeWithAudioEnd(Optional.empty()).build());
+    transcodeExecutor.setAvailableSlots(0);
+    transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+            .startPosition(Optional.of(Duration.ofSeconds(30)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getNormalEnd()).contains(Duration.ofSeconds(26));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+    assertThat(capacityRefusals("no_encoder_with_free_slot")).isZero();
+  }
+
+  // Only a job attempt learned where the audio ends, so the session pads the audio up to the media
+  // end instead of ending at a copied-audio boundary.
+  @Test
+  @DisplayName(
+      "Should finish a resume at the media end when the session pads audio whose end only a job"
+          + " learned")
+  void shouldFinishAResumeAtTheMediaEndWhenTheSessionPadsAudioWhoseEndOnlyAJobLearned() {
+    probeResults.setDefaultProbe(probeWithAudioEnd(Optional.empty()).build());
+    var file = seedMediaFile();
+    var snapshot = probeResults.findByMediaFileId(file.getId()).orElseThrow().getSnapshot();
+    assertThat(
+            learnedStreamEnds.store(
+                LearnedStreamEnd.builder()
+                    .mediaFileId(file.getId())
+                    .snapshot(snapshot)
+                    .streamIndex(1)
+                    .endTime(Duration.ofSeconds(10))
+                    .build()))
+        .isTrue();
+    var command =
+        createStreamSessionCommandBuilder(file.getId(), UUID.randomUUID())
+            .startPosition(Optional.of(Duration.ofSeconds(26)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getTranscodeDecision().audioDecision().mode())
+        .isEqualTo(AudioMode.TRANSCODE);
+    assertThat(session.getNormalEnd()).contains(Duration.ofSeconds(26));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  // Workers refuse an encode without an output frame rate, so no such encode can finish a resume.
+  @ParameterizedTest
+  @ValueSource(longs = {10, 26, 40})
+  @DisplayName(
+      "Should refuse a resume as it refuses playback from the start when every encoder is busy and"
+          + " the source has no frame rate")
+  void shouldRefuseAResumeAsItRefusesPlaybackFromTheStartWhenEveryEncoderIsBusyWithoutAFrameRate(
+      long startSeconds) {
+    probeResults.setDefaultProbe(
+        probeWithAudioEnd(Optional.empty()).framerate(OptionalDouble.empty()).build());
+    transcodeExecutor.setAvailableSlots(0);
+    transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
+    var file = seedMediaFile();
+    var fromTheStart =
+        createStreamSessionCommandBuilder(file.getId(), UUID.randomUUID())
+            .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+            .build();
+    var refusalFromTheStart = rejectionOf(service.createSession(fromTheStart));
+    var resume =
+        createStreamSessionCommandBuilder(file.getId(), UUID.randomUUID())
+            .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+            .startPosition(Optional.of(Duration.ofSeconds(startSeconds)))
+            .build();
+
+    var outcome = service.createSession(resume);
+
+    assertThat(rejectionOf(outcome)).isEqualTo(refusalFromTheStart);
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  private static MediaProbe.MediaProbeBuilder probeWithAudioEnd(Optional<Duration> end) {
+    return defaultProbeBuilder()
+        .duration(Duration.ofSeconds(26))
+        .keyframes(keyframesAtMillis(0, 6_500, 13_000, 19_500))
+        .streams(
+            List.of(
+                ProbeFixture.videoStreamBuilder(defaultProbeBuilder().build())
+                    .endTime(Optional.of(Duration.ofSeconds(26)))
+                    .build(),
+                StreamInfo.builder()
+                    .index(1)
+                    .codecType("audio")
+                    .codec(Optional.of("aac"))
+                    .codecString(Optional.of("mp4a.40.2"))
+                    .channels(OptionalInt.of(2))
+                    .sampleRate(OptionalInt.of(48_000))
+                    .endTime(end)
+                    .build()));
+  }
+
   // A copy's segment opens at its keyframe, so a position before the keyframe that opens segment 1
   // still lies in segment 0.
   @ParameterizedTest
@@ -6681,13 +7010,12 @@ class HlsStreamingServiceTest {
         .doesNotContain("#EXT-X-START");
   }
 
-  @ParameterizedTest
-  @ValueSource(longs = {-1, 7_200_000, 7_200_001})
-  @DisplayName("Should refuse a start position before zero or at or past the media's end")
-  void shouldRefuseAStartPositionBeforeZeroOrAtOrPastTheMediasEnd(long startMillis) {
+  @Test
+  @DisplayName("Should refuse a start position before zero")
+  void shouldRefuseAStartPositionBeforeZero() {
     var command =
         createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
-            .startPosition(Optional.of(Duration.ofMillis(startMillis)))
+            .startPosition(Optional.of(Duration.ofMillis(-1)))
             .build();
 
     var outcome = service.createSession(command);
@@ -6696,6 +7024,101 @@ class HlsStreamingServiceTest {
         .isEqualTo(new CreateStreamSessionRejection.StartPositionOutOfRange());
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
     assertThat(runtimeRegistry.findById(command.streamSessionId())).isEmpty();
+  }
+
+  // The header of a file cut near 14 s states 30 s. Every playlist of the stream session ends at
+  // the scanned media end, where the copied audio ends, so a start position between the two lies
+  // past the last segment (ADR 0064).
+  @ParameterizedTest
+  @ValueSource(longs = {14_250, 20_000})
+  @DisplayName(
+      "Should finish a resume at or past the scanned media end when the container header"
+          + " overstates the source's length")
+  void shouldFinishAResumeAtOrPastTheScannedMediaEndWhenTheHeaderOverstatesTheLength(
+      long startMillis) {
+    var file = seedMediaFileScannedToEndAt(Duration.ofSeconds(30), Duration.ofMillis(14_250));
+    var command =
+        createStreamSessionCommandBuilder(file.getId(), UUID.randomUUID())
+            .startPosition(Optional.of(Duration.ofMillis(startMillis)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getNormalEnd()).contains(Duration.ofMillis(14_250));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  // A file that was written to a pipe states no duration, so its header reads as zero. Its scanned
+  // media end is the only end that the server knows.
+  @Test
+  @DisplayName(
+      "Should start at the start position's segment when the position lies before the scanned"
+          + " media end of a source whose header states no duration")
+  void
+      shouldStartAtTheStartPositionsSegmentWhenItLiesBeforeTheScannedEndOfASourceWithoutADuration() {
+    var file = seedMediaFileScannedToEndAt(Duration.ZERO, Duration.ofMillis(14_250));
+    var command =
+        createStreamSessionCommandBuilder(file.getId(), UUID.randomUUID())
+            .startPosition(Optional.of(Duration.ofSeconds(13)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getStartPosition()).contains(Duration.ofSeconds(13));
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .isEqualTo(2);
+  }
+
+  // A media file whose header states the container duration, and whose keyframe packet scan read
+  // keyframes at 0, 6 and 12 s, the video's end one frame before the media end, and the audio's
+  // end at the media end.
+  private MediaFile seedMediaFileScannedToEndAt(Duration containerDuration, Duration mediaEnd) {
+    return seedMediaFileScanned(
+        defaultProbeBuilder().duration(containerDuration).build(),
+        List.of(
+            new SourceStreamEnd(0, mediaEnd.minusMillis(42)), new SourceStreamEnd(1, mediaEnd)));
+  }
+
+  // A media file of the probe, whose keyframe packet scan read keyframes at 0, 6 and 12 s and the
+  // stream ends.
+  private MediaFile seedMediaFileScanned(MediaProbe probe, List<SourceStreamEnd> streamEnds) {
+    var file = seedMediaFile();
+    var snapshot = new SourceFileSnapshot(1_000_000, Instant.EPOCH);
+    probeResults.publish(
+        ProbePublication.builder()
+            .mediaFileId(file.getId())
+            .snapshot(snapshot)
+            .probeVersion(ProbeVersion.CURRENT)
+            .outcome(
+                ProbeFixture.completeProbeBuilder(probe)
+                    .keyframes(
+                        new KeyframeKnowledge.PacketScanRequired(
+                            KeyframePacketScanReason.NO_CONTAINER_INDEX))
+                    .build())
+            .build());
+    probeResults.publishKeyframePacketScan(
+        KeyframePacketScanPublication.builder()
+            .mediaFileId(file.getId())
+            .snapshot(snapshot)
+            .probeVersion(ProbeVersion.CURRENT)
+            .keyframes(
+                new KeyframeKnowledge.Known(
+                    KeyframePositions.builder()
+                        .streamIndex(0)
+                        .timeBaseNumerator(1)
+                        .timeBaseDenominator(1_000)
+                        .source(KeyframePositionSource.PACKET_SCAN)
+                        .keyframes(
+                            List.of(
+                                new KeyframePosition(0, 0),
+                                new KeyframePosition(6_000, 6_000),
+                                new KeyframePosition(12_000, 12_000)))
+                        .build()))
+            .streamEnds(streamEnds)
+            .build());
+    return file;
   }
 
   @Test
@@ -6724,6 +7147,103 @@ class HlsStreamingServiceTest {
     assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
     assertThat(session.getStartPosition()).contains(Duration.ofMillis(5_381_500));
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  // A player that can select an audio track inside a directly played file switches tracks in place
+  // (ADR 0045), so direct play can store a position past the end of the session's own track.
+  @Test
+  @DisplayName(
+      "Should direct-play from a start position past the session's audio track when another audio"
+          + " track of the file ends later")
+  void shouldDirectPlayFromAStartPositionPastTheSessionsAudioTrackWhenAnotherTrackEndsLater() {
+    var command =
+        directPlayCommandSelectingAudioTracks(seedMediaFileWhoseSecondAudioTrackEndsLater())
+            .startPosition(Optional.of(Duration.ofSeconds(90)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
+    assertThat(session.getStartPosition()).contains(Duration.ofSeconds(90));
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse a direct-play start position at the end of the file's longest audio track")
+  void shouldRefuseADirectPlayStartPositionAtTheEndOfTheFilesLongestAudioTrack() {
+    var command =
+        directPlayCommandSelectingAudioTracks(seedMediaFileWhoseSecondAudioTrackEndsLater())
+            .startPosition(Optional.of(Duration.ofSeconds(120)))
+            .build();
+
+    var outcome = service.createSession(command);
+
+    assertThat(rejectionOf(outcome))
+        .isEqualTo(new CreateStreamSessionRejection.StartPositionOutOfRange());
+    assertThat(runtimeRegistry.findById(command.streamSessionId())).isEmpty();
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @DisplayName("Should refuse direct play when an alternate audio track has no known end")
+  void shouldRefuseDirectPlayWhenAnAlternateAudioTrackHasNoKnownEnd(boolean explicitStart) {
+    var file =
+        seedMediaFileScanned(
+            directPlayableProbeWithAudioIn("eng", "fra").toBuilder()
+                .duration(Duration.ZERO)
+                .build(),
+            List.of(
+                new SourceStreamEnd(0, Duration.ofSeconds(60)),
+                new SourceStreamEnd(1, Duration.ofSeconds(60))));
+    var command =
+        directPlayCommandSelectingAudioTracks(file)
+            .startPosition(explicitStart ? Optional.of(Duration.ZERO) : Optional.empty())
+            .build();
+
+    var outcome = service.createSession(command);
+
+    assertThat(rejectionOf(outcome)).isEqualTo(new CreateStreamSessionRejection.NoMediaSegments());
+    assertThat(runtimeRegistry.findById(command.streamSessionId())).isEmpty();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  // An HLS stream session delivers its own audio track only, so its playlists end with that track
+  // (ADR 0064).
+  @Test
+  @DisplayName(
+      "Should finish an HLS resume past the session's audio track when another audio track of the"
+          + " file ends later")
+  void shouldFinishAnHlsResumePastTheSessionsAudioTrackWhenAnotherTrackEndsLater() {
+    var command =
+        createStreamSessionCommandBuilder(
+                seedMediaFileWhoseSecondAudioTrackEndsLater().getId(), UUID.randomUUID())
+            .startPosition(Optional.of(Duration.ofSeconds(90)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getNormalEnd()).contains(Duration.ofSeconds(60));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  // The header states 120 s. A keyframe packet scan read the video and the first audio track to
+  // 60 s, and the second audio track to 120 s.
+  private MediaFile seedMediaFileWhoseSecondAudioTrackEndsLater() {
+    return seedMediaFileScanned(
+        directPlayableProbeWithAudioIn("eng", "fra").toBuilder()
+            .duration(Duration.ofSeconds(120))
+            .build(),
+        List.of(
+            new SourceStreamEnd(0, Duration.ofSeconds(60)),
+            new SourceStreamEnd(1, Duration.ofSeconds(60)),
+            new SourceStreamEnd(2, Duration.ofSeconds(120))));
+  }
+
+  private CreateStreamSessionCommand.CreateStreamSessionCommandBuilder
+      directPlayCommandSelectingAudioTracks(MediaFile file) {
+    return directPlayCommand(file.getId())
+        .capabilityDeclaration(
+            directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(true).build());
   }
 
   @Test
@@ -7845,7 +8365,6 @@ class HlsStreamingServiceTest {
                                             VideoCodecProfileCapability.builder()
                                                 .profile(VideoCodecProfile.HEVC_MAIN_10)
                                                 .maxLevel(41)
-                                                .maxTier(Optional.of(VideoCodecTier.MAIN))
                                                 .build()))
                                     .build(),
                                 hevcEntryBuilder()
@@ -7855,7 +8374,6 @@ class HlsStreamingServiceTest {
                                             VideoCodecProfileCapability.builder()
                                                 .profile(VideoCodecProfile.HEVC_MAIN)
                                                 .maxLevel(51)
-                                                .maxTier(Optional.of(VideoCodecTier.MAIN))
                                                 .build()))
                                     .build()))
                         .build())));

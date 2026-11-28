@@ -1731,7 +1731,8 @@ class WorkerSessionGrpcServiceTest {
             workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
     var job = variantJob(sourceNamespaceId);
     assertThat(registry.dispatch(job)).isPresent();
-    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var segmentStore = new FakeSegmentStore();
+    var service = new WorkerSessionGrpcService(registry, segmentStore);
 
     for (var segmentName : List.of("init.mp4", "segment0.m4s", "segment1.m4s")) {
       var response = new SuccessfulUploadResponseObserver();
@@ -1749,9 +1750,18 @@ class WorkerSessionGrpcServiceTest {
       assertThat(response.completed()).as("upload of %s", segmentName).isTrue();
     }
 
-    var stored = new MediaSegmentStoredEvent(fromProto(job.getStreamSessionId()));
+    var streamSessionId = fromProto(job.getStreamSessionId());
     assertThat(events.getEventsOfType(MediaSegmentStoredEvent.class))
-        .containsExactly(stored, stored);
+        .containsExactly(
+            new MediaSegmentStoredEvent(streamSessionId, "720p/segment0.m4s"),
+            new MediaSegmentStoredEvent(streamSessionId, "720p/segment1.m4s"))
+        .allSatisfy(
+            announced ->
+                assertThat(
+                        segmentStore.segmentExists(
+                            announced.streamSessionId(), announced.storedSegmentName()))
+                    .as("the segment store keeps %s", announced.storedSegmentName())
+                    .isTrue());
   }
 
   @Test

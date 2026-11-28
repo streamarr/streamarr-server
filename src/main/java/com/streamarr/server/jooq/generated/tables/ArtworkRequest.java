@@ -45,6 +45,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -150,7 +151,7 @@ public class ArtworkRequest extends TableImpl<ArtworkRequestRecord> {
     }
 
     private ArtworkRequest(Name alias, Table<ArtworkRequestRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -203,7 +204,7 @@ public class ArtworkRequest extends TableImpl<ArtworkRequestRecord> {
 
         @Override
         public ArtworkRequestPath as(Table<?> alias) {
-            return new ArtworkRequestPath(alias.getQualifiedName(), this);
+            return new ArtworkRequestPath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -319,7 +320,7 @@ public class ArtworkRequest extends TableImpl<ArtworkRequestRecord> {
 
     @Override
     public ArtworkRequest as(Table<?> alias) {
-        return new ArtworkRequest(alias.getQualifiedName(), this);
+        return new ArtworkRequest(alias.getUnqualifiedName(), this);
     }
 
     /**

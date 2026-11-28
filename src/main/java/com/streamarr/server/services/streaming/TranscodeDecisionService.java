@@ -374,8 +374,22 @@ public class TranscodeDecisionService {
           when VideoCopyBandwidth.estimateExceedsSegmentCap(source, audio, playlist) ->
           segmentCapRefusal(StreamCopyRefusal.ESTIMATE_EXCEEDS_SEGMENT_CAP, countsRefusals);
       case PlanChoice.Accepted(var plan, var reasons) ->
-          new VideoCopyChoice.Copied(audio, plan, reasons);
+          new VideoCopyChoice.Copied(audio, withAssumedMatrixWhenSupported(request, plan), reasons);
     };
+  }
+
+  // Naming an assumed matrix is optional; every other rewrite remains required by the copy.
+  private static CopyPlan withAssumedMatrixWhenSupported(
+      TranscodeDecisionRequest request, CopyPlan plan) {
+    var source = request.source();
+    if (!"h264".equals(source.videoCodec()) || source.assumedSourceMatrix().isEmpty()) {
+      return plan;
+    }
+
+    var rewrites = new ArrayList<>(plan.bitstreamRewrites());
+    rewrites.add(BitstreamRewrite.NAME_ASSUMED_SOURCE_MATRIX);
+    var named = new CopyPlan(List.copyOf(rewrites), plan.dolbyVisionOutput());
+    return hasWorkerThatDeliversTheCopy(request, named) ? named : plan;
   }
 
   private VideoCopyChoice segmentCapRefusal(StreamCopyRefusal refusal, boolean countsRefusals) {
@@ -461,8 +475,8 @@ public class TranscodeDecisionService {
       return choice;
     }
 
-    // A copy's last segment cannot take in the audio after the video's end, while an encode holds
-    // the last frame up to the advertised end (ADR 0037, early ends).
+    // A copy ends with the video, while its media playlist runs to the session's media end; an
+    // encode holds the last frame up to that end (ADR 0037, early ends).
     if (source.videoEndsEarly(properties.targetSegmentDuration())) {
       return new PlanChoice.Refused(List.of(DecisionReason.VIDEO_ENDS_EARLY));
     }
@@ -768,16 +782,19 @@ public class TranscodeDecisionService {
   }
 
   // A stream copy's segments can start only at source keyframes (ADR 0037), so the video is copied
-  // only when the known keyframes open its segment list. A slot without a keyframe merges into the
-  // segment before it. Each segment starts at its keyframe's stored tick, which a copy keeps only
-  // when FFmpeg makes no start time correction, as no stored probe outcome carries one yet.
+  // only when the known keyframes, or those kept from an earlier packet scan, open its segment
+  // list. A slot without a keyframe merges into the segment before it. Each segment starts at its
+  // keyframe's stored tick, which a copy keeps only when FFmpeg makes no start time correction, as
+  // no stored probe outcome carries one yet.
   private Optional<StreamCopyRefusal> streamCopyRefusal(MediaProbe source) {
     return switch (source.keyframes()) {
-      case KeyframeKnowledge.Known _
+      case KeyframeKnowledge.Known _, KeyframeKnowledge.PacketScanRequiredWithKeptPositions _
           when StartTimeCorrections.isCorrectedBy(source.containerFormat()) ->
           Optional.of(StreamCopyRefusal.NO_START_TIME_CORRECTION);
       case KeyframeKnowledge.Known(var positions) ->
           streamCopyRefusal(positions, MediaSegmentTimelines.of(source, properties));
+      case KeyframeKnowledge.PacketScanRequiredWithKeptPositions(_, var keptPositions) ->
+          streamCopyRefusal(keptPositions, MediaSegmentTimelines.of(source, properties));
       case KeyframeKnowledge.PacketScanRequired _ ->
           Optional.of(StreamCopyRefusal.PACKET_SCAN_REQUIRED);
       case KeyframeKnowledge.Unavailable _ -> Optional.of(StreamCopyRefusal.KEYFRAMES_UNAVAILABLE);
@@ -896,10 +913,11 @@ public class TranscodeDecisionService {
     return source.audioBitrate().orElse(AudioDecision.bitrateFor(source.audioCodec(), channels));
   }
 
-  // Only an encode can pad audio that ends early with silence up to the advertised end, so that
-  // every segment after the audio's end carries audio (ADR 0037, early ends).
+  // A job's learned end can reflect a read error, so it keeps the existing padded recovery instead
+  // of shortening the title as a header or scanned end does.
   private Optional<DecisionReason> audioEndRefusal(MediaProbe source) {
-    if (!source.sessionAudioEndsEarly(properties.targetSegmentDuration())) {
+    if (source.probedSessionAudioEnd().isPresent()
+        || !source.sessionAudioEndsEarly(properties.targetSegmentDuration())) {
       return Optional.empty();
     }
 

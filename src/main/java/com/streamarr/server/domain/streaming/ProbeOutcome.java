@@ -11,10 +11,21 @@ import lombok.NonNull;
 
 public sealed interface ProbeOutcome {
 
-  /** Whether a worker must scan the source's packets to find its keyframe positions. */
+  /**
+   * Whether a worker must scan the source's packets to find its keyframe positions, also while the
+   * positions of an earlier scan stand in for that scan.
+   */
   default boolean needsKeyframePacketScan() {
     return this instanceof Success success
-        && success.keyframes() instanceof KeyframeKnowledge.PacketScanRequired;
+        && switch (success.keyframes()) {
+          case KeyframeKnowledge.PacketScanRequired _,
+              KeyframeKnowledge.PacketScanRequiredWithKeptPositions _ ->
+              true;
+          case KeyframeKnowledge.Known _,
+              KeyframeKnowledge.Unavailable _,
+              KeyframeKnowledge.NotReported _ ->
+              false;
+        };
   }
 
   record Failure(@NonNull ProbeError error) implements ProbeOutcome {}
@@ -22,7 +33,8 @@ public sealed interface ProbeOutcome {
   /**
    * A successful probe. {@code chosenVideoStream} is empty for a probe version that names no chosen
    * video stream, before version 4. {@code streamMeasurements} is empty when no step measured the
-   * file's streams.
+   * file's streams. {@code scannedStreamEnds} holds where a keyframe packet scan read each stream's
+   * end, and is empty for every other probe.
    */
   @Builder
   record Success(
@@ -31,11 +43,13 @@ public sealed interface ProbeOutcome {
       @NonNull KeyframeKnowledge keyframes,
       @NonNull Optional<ChosenVideoStream> chosenVideoStream,
       @NonNull Optional<Boolean> streamTitlesOmitted,
-      @NonNull Optional<StreamMeasurements> streamMeasurements)
+      @NonNull Optional<StreamMeasurements> streamMeasurements,
+      @NonNull List<SourceStreamEnd> scannedStreamEnds)
       implements ProbeOutcome {
 
     public Success {
       streams = List.copyOf(streams);
+      scannedStreamEnds = List.copyOf(scannedStreamEnds);
     }
 
     /** An outcome of a probe version that names no chosen video stream. */
@@ -54,6 +68,24 @@ public sealed interface ProbeOutcome {
         Optional<ChosenVideoStream> chosenVideoStream,
         Optional<Boolean> streamTitlesOmitted) {
       this(container, streams, keyframes, chosenVideoStream, streamTitlesOmitted, Optional.empty());
+    }
+
+    /** An outcome of a probe that scanned no stream's end. */
+    public Success(
+        ProbeContainer container,
+        List<StreamInfo> streams,
+        KeyframeKnowledge keyframes,
+        Optional<ChosenVideoStream> chosenVideoStream,
+        Optional<Boolean> streamTitlesOmitted,
+        Optional<StreamMeasurements> streamMeasurements) {
+      this(
+          container,
+          streams,
+          keyframes,
+          chosenVideoStream,
+          streamTitlesOmitted,
+          streamMeasurements,
+          List.of());
     }
 
     public MediaProbe mediaProbe() {
@@ -134,6 +166,7 @@ public sealed interface ProbeOutcome {
       private Optional<ChosenVideoStream> chosenVideoStream = Optional.empty();
       private Optional<Boolean> streamTitlesOmitted = Optional.empty();
       private Optional<StreamMeasurements> streamMeasurements = Optional.empty();
+      private List<SourceStreamEnd> scannedStreamEnds = List.of();
     }
   }
 }

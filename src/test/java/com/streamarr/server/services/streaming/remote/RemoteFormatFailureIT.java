@@ -156,6 +156,7 @@ class RemoteFormatFailureIT {
               .runtimeRegistry(rig.registry)
               .producerLifecycle(rig.streaming.lifecycle())
               .deliveryCoordinator(rig.streaming.coordinator())
+              .unservedSegments(rig.streaming.unservedSegments())
               .segmentStore(rig.segments)
               .build();
 

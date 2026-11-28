@@ -5,8 +5,11 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.a
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.upToLevel;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.media.LearnedStreamEnd;
+import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.BitstreamRewrite;
@@ -34,7 +37,6 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntryRefusal;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
-import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoQuality;
@@ -44,6 +46,7 @@ import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -51,6 +54,7 @@ import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
@@ -84,7 +88,7 @@ class TranscodeDecisionReasonTest {
     var mainOnly =
         client(
             h264EntryBuilder()
-                .codecProfiles(List.of(h264(VideoCodecProfile.H264_MAIN, 52)))
+                .codecProfiles(List.of(upToLevel(VideoCodecProfile.H264_MAIN, 52)))
                 .build());
 
     var decision = decide(Source.builder().build().probe(), mainOnly);
@@ -100,6 +104,52 @@ class TranscodeDecisionReasonTest {
 
     assertThat(decision.transcodeMode().copiesVideo()).isTrue();
     assertThat(decision.reasons()).isEmpty();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("highTierSources")
+  @DisplayName(
+      "Should copy a High tier source with no reason when an entry of its codec family accepts its"
+          + " codec profile, level and other properties")
+  void
+      shouldCopyAHighTierSourceWithNoReasonWhenAnEntryOfItsCodecFamilyAcceptsItsCodecProfileLevelAndOtherProperties(
+          Source.SourceBuilder source,
+          VideoCodecProfile profile,
+          ClientCapabilityDeclaration client) {
+    var highTier =
+        source
+            .videoProperties(
+                Optional.of(
+                    VideoStreamProperties.builder()
+                        .codecProfile(Optional.of(profile))
+                        .codecLevel(OptionalInt.of(51))
+                        .codecTier(Optional.of(VideoCodecTier.HIGH))
+                        .firstFramesRead(true)
+                        .build()))
+            .build()
+            .probe();
+
+    var decision = decide(highTier, client);
+
+    assertThat(decision.reasons()).isEmpty();
+    assertThat(decision.transcodeMode().copiesVideo()).isTrue();
+  }
+
+  // hvc1.2.4.H153.90 and av01.0.13H.10 are each in the High tier at level 5.1.
+  static Stream<Arguments> highTierSources() {
+    return Stream.of(
+        Arguments.of(
+            Named.of(
+                "an HEVC Main 10 source at level 5.1 to an HEVC entry",
+                hevcMain10().codecString("hvc1.2.4.H153.90")),
+            VideoCodecProfile.HEVC_MAIN_10,
+            client(hevcEntryBuilder().build())),
+        Arguments.of(
+            Named.of(
+                "an AV1 Main source at level 5.1 to an AV1 entry",
+                Source.builder().codec("av1").codecString("av01.0.13H.10").bitDepth(10)),
+            VideoCodecProfile.AV1_MAIN,
+            client()));
   }
 
   @Test
@@ -163,7 +213,7 @@ class TranscodeDecisionReasonTest {
                 Source.builder().build().probe()),
             client(
                 h264EntryBuilder()
-                    .codecProfiles(List.of(h264(VideoCodecProfile.H264_HIGH, 31)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.H264_HIGH, 31)))
                     .build()),
             List.of(DecisionReason.VIDEO_CODEC_LEVEL_NOT_DECLARED)),
         Arguments.of(
@@ -171,7 +221,7 @@ class TranscodeDecisionReasonTest {
             client(
                 hevcEntryBuilder()
                     .maxBitDepth(8)
-                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                     .build()),
             List.of(DecisionReason.VIDEO_BIT_DEPTH_NOT_DECLARED)),
         Arguments.of(
@@ -180,7 +230,7 @@ class TranscodeDecisionReasonTest {
                 hevcMain10().bitDepthUnreported(true).build().probe()),
             client(
                 hevcEntryBuilder()
-                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                     .build()),
             List.of(DecisionReason.VIDEO_BIT_DEPTH_UNKNOWN)),
         Arguments.of(
@@ -197,7 +247,7 @@ class TranscodeDecisionReasonTest {
                 hevcMain10().dynamicRange(range(CompatibleBase.PQ)).build().probe()),
             client(
                 hevcEntryBuilder()
-                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                     .build()),
             List.of(DecisionReason.DYNAMIC_RANGE_NOT_DECLARED)),
         Arguments.of(
@@ -207,7 +257,7 @@ class TranscodeDecisionReasonTest {
             client(
                 hevcEntryBuilder()
                     .compatibleBases(List.of(CompatibleBase.PQ))
-                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                     .build()),
             List.of(DecisionReason.DYNAMIC_RANGE_NOT_DECLARED)),
         Arguments.of(
@@ -216,7 +266,7 @@ class TranscodeDecisionReasonTest {
                 hevcMain10().dynamicRange(profile81()).build().probe()),
             client(
                 hevcEntryBuilder()
-                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                     .build()),
             List.of(
                 DecisionReason.DOLBY_VISION_NOT_DECLARED,
@@ -238,7 +288,7 @@ class TranscodeDecisionReasonTest {
             client(
                 hevcEntryBuilder()
                     .compatibleBases(List.of())
-                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                     .dolbyVisionProfiles(
                         List.of(
                             DolbyVisionProfileCapability.builder()
@@ -277,7 +327,7 @@ class TranscodeDecisionReasonTest {
   }
 
   static Stream<Arguments> refusalsOfEachEntry() {
-    var level31 = List.of(h264(VideoCodecProfile.H264_HIGH, 31));
+    var level31 = List.of(upToLevel(VideoCodecProfile.H264_HIGH, 31));
     return Stream.of(
         Arguments.of(
             Named.of(
@@ -307,7 +357,7 @@ class TranscodeDecisionReasonTest {
                     .probe()),
             client(
                 hevcEntryBuilder()
-                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                     .build()),
             List.of(DecisionReason.VIDEO_CODEC_PROFILE_UNKNOWN),
             List.of(hls(0, DecisionReason.VIDEO_CODEC_PROFILE_UNKNOWN))),
@@ -341,11 +391,11 @@ class TranscodeDecisionReasonTest {
             client(
                 hevcEntryBuilder()
                     .hls(false)
-                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                     .build(),
                 hevcEntryBuilder()
                     .maxBitDepth(8)
-                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                     .build()),
             List.of(DecisionReason.VIDEO_BIT_DEPTH_NOT_DECLARED),
             List.of(hls(1, DecisionReason.VIDEO_BIT_DEPTH_NOT_DECLARED))));
@@ -362,7 +412,7 @@ class TranscodeDecisionReasonTest {
         client(
             hevcEntryBuilder()
                 .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
-                .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                 .build());
 
     var decision = decide(source, pqClient);
@@ -438,7 +488,7 @@ class TranscodeDecisionReasonTest {
         client(
             hevcEntryBuilder()
                 .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
-                .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                 .build());
 
     var decision = decide(source, pqClient);
@@ -470,13 +520,13 @@ class TranscodeDecisionReasonTest {
             .maxWidth(1280)
             .maxHeight(720)
             .compatibleBases(pqBases)
-            .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+            .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
             .dolbyVisionProfiles(List.of(profile81Capability()))
             .build();
     var fullSizePq =
         hevcEntryBuilder()
             .compatibleBases(pqBases)
-            .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+            .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
             .build();
 
     var decision = decide(source, client(smallDolbyVision, fullSizePq));
@@ -927,10 +977,8 @@ class TranscodeDecisionReasonTest {
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("earlyEndingStreams")
-  @DisplayName(
-      "Should encode a chosen stream only when it ends at least one segment before another stream"
-          + " of the source")
-  void shouldEncodeAChosenStreamOnlyWhenItEndsAtLeastOneSegmentBeforeAnotherStreamOfTheSource(
+  @DisplayName("Should choose stream operations when known stream ends differ")
+  void shouldChooseStreamOperationsWhenKnownStreamEndsDiffer(
       Source source, boolean copiesVideo, AudioMode audio, List<DecisionReason> expected) {
     var decision = decide(source.probe(), defaultDeclarationBuilder().build());
 
@@ -939,7 +987,31 @@ class TranscodeDecisionReasonTest {
     assertThat(decision.reasons()).containsExactlyElementsOf(expected);
   }
 
-  // The source's container is 10 minutes long, cut into 6 s segments.
+  @Test
+  @DisplayName("Should encode early-ending audio when only a job learned its end")
+  void shouldEncodeEarlyEndingAudioWhenOnlyAJobLearnedItsEnd() {
+    var source =
+        Source.builder()
+            .videoEnd(Duration.ofMinutes(10))
+            .build()
+            .probe()
+            .withLearnedEndTimes(
+                List.of(
+                    LearnedStreamEnd.builder()
+                        .mediaFileId(UUID.randomUUID())
+                        .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
+                        .streamIndex(2)
+                        .endTime(Duration.ofSeconds(10))
+                        .build()));
+
+    var decision = decide(source, defaultDeclarationBuilder().build());
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.reasons()).containsExactly(DecisionReason.AUDIO_ENDS_EARLY);
+  }
+
+  // The source's container is 10 minutes long, cut into 6 s segments. Only its header states where
+  // each stream ends, so the session's media ends at the container's duration.
   static Stream<Arguments> earlyEndingStreams() {
     var tenMinutes = Duration.ofMinutes(10);
     var oneSegmentEarlier = tenMinutes.minusSeconds(6);
@@ -950,8 +1022,8 @@ class TranscodeDecisionReasonTest {
                 "audio that ends one segment before the video",
                 Source.builder().videoEnd(tenMinutes).audioEnd(oneSegmentEarlier).build()),
             true,
-            AudioMode.TRANSCODE,
-            List.of(DecisionReason.AUDIO_ENDS_EARLY)),
+            AudioMode.COPY,
+            List.of()),
         Arguments.of(
             Named.of(
                 "audio that ends just under one segment before the video",
@@ -975,18 +1047,28 @@ class TranscodeDecisionReasonTest {
             List.of()),
         Arguments.of(
             Named.of(
-                "video and audio that end one segment before a second audio track",
+                "video and audio that end one segment before an audio track that the session does"
+                    + " not play, which sets the container's duration",
                 Source.builder()
                     .videoEnd(oneSegmentEarlier)
                     .audioEnd(oneSegmentEarlier)
                     .secondAudioEnd(tenMinutes)
                     .build()),
             false,
-            AudioMode.TRANSCODE,
-            List.of(DecisionReason.VIDEO_ENDS_EARLY, DecisionReason.AUDIO_ENDS_EARLY)),
+            AudioMode.COPY,
+            List.of(DecisionReason.VIDEO_ENDS_EARLY)),
         Arguments.of(
             Named.of(
-                "audio whose end the probe states beside video whose end it does not",
+                "video and audio that end together one segment before the container's duration,"
+                    + " which no stream's end reaches",
+                Source.builder().videoEnd(oneSegmentEarlier).audioEnd(oneSegmentEarlier).build()),
+            true,
+            AudioMode.COPY,
+            List.of()),
+        Arguments.of(
+            Named.of(
+                "audio whose end the probe states long before the container's duration, beside"
+                    + " video whose end it does not",
                 Source.builder().audioEnd(Duration.ofSeconds(20)).build()),
             true,
             AudioMode.COPY,
@@ -1002,8 +1084,8 @@ class TranscodeDecisionReasonTest {
                     .audioEnd(oneSegmentEarlier)
                     .build()),
             false,
-            AudioMode.TRANSCODE,
-            List.of(DecisionReason.VIDEO_CODEC_NOT_DECLARED, DecisionReason.AUDIO_ENDS_EARLY)));
+            AudioMode.COPY,
+            List.of(DecisionReason.VIDEO_CODEC_NOT_DECLARED)));
   }
 
   private TranscodeDecision decide(MediaProbe source, ClientCapabilityDeclaration client) {
@@ -1051,7 +1133,7 @@ class TranscodeDecisionReasonTest {
     return client(
         hevcEntryBuilder()
             .compatibleBases(everyBase)
-            .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+            .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
             .dolbyVisionProfiles(List.of(profile81Capability()))
             .hdr10Plus(true)
             .build(),
@@ -1062,18 +1144,6 @@ class TranscodeDecisionReasonTest {
     return DolbyVisionProfileCapability.builder()
         .profile(DolbyVisionProfile.PROFILE_8_1)
         .maxLevel(13)
-        .build();
-  }
-
-  private static VideoCodecProfileCapability h264(VideoCodecProfile profile, int maxLevel) {
-    return VideoCodecProfileCapability.builder().profile(profile).maxLevel(maxLevel).build();
-  }
-
-  private static VideoCodecProfileCapability mainTier(VideoCodecProfile profile) {
-    return VideoCodecProfileCapability.builder()
-        .profile(profile)
-        .maxLevel(51)
-        .maxTier(Optional.of(VideoCodecTier.MAIN))
         .build();
   }
 

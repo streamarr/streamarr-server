@@ -26,6 +26,7 @@ import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.ServerSettingsFixture;
+import com.streamarr.server.fixtures.UnservedSegmentsFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.filepath.FilepathCodec;
@@ -217,12 +218,14 @@ class HlsCopySeekSmokeTest {
             .build();
     workerFixture.creditUploadsTo(producerLifecycle);
     progressListener = new JobAttemptProgressListener(producerLifecycle);
+    var unservedSegments = UnservedSegmentsFixture.unservedSegments();
     coordinator =
         SegmentDeliveryCoordinator.builder()
             .segmentStore(segmentStore)
             .producerLifecycle(producerLifecycle)
             .heldRequests(workerFixture.workerSessions().heldSegmentRequests())
             .eventPublisher(new CapturingEventPublisher())
+            .unservedSegments(unservedSegments)
             .build();
     mediaFileRepository = new FakeMediaFileRepository();
     probeRepository = new FakeMediaFileContainerInfoRepository();
@@ -242,6 +245,7 @@ class HlsCopySeekSmokeTest {
             .runtimeRegistry(sessionRegistry)
             .producerLifecycle(producerLifecycle)
             .deliveryCoordinator(coordinator)
+            .unservedSegments(unservedSegments)
             .build();
     playlistService = new HlsPlaylistService(properties);
   }

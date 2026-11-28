@@ -33,6 +33,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -98,7 +99,7 @@ public class SecurityAuditEvent extends TableImpl<SecurityAuditEventRecord> {
     }
 
     private SecurityAuditEvent(Name alias, Table<SecurityAuditEventRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -159,7 +160,7 @@ public class SecurityAuditEvent extends TableImpl<SecurityAuditEventRecord> {
 
     @Override
     public SecurityAuditEvent as(Table<?> alias) {
-        return new SecurityAuditEvent(alias.getQualifiedName(), this);
+        return new SecurityAuditEvent(alias.getUnqualifiedName(), this);
     }
 
     /**

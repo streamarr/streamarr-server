@@ -277,11 +277,21 @@ class RemoteVariantJobMapperTest {
         .isEqualTo(holdsLastFrame);
     assertThat(job.getDecision().getAudio().getPadWithSilenceToAdvertisedEnd())
         .isEqualTo(padsWithSilence);
-    var carriesEnd = holdsLastFrame || padsWithSilence;
-    var execution = job.getExecution();
-    assertThat(execution.hasAdvertisedEnd()).isEqualTo(carriesEnd);
-    assertThat(execution.getAdvertisedEnd().getSeconds()).isEqualTo(carriesEnd ? 60 : 0);
-    assertThat(execution.getAdvertisedEnd().getNanos()).isEqualTo(carriesEnd ? 18_000_000 : 0);
+  }
+
+  // Each job attempt carries the media end as the advertised end, a copy's included, and the last
+  // listed segment's audio ends there (ADR 0037, media end).
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(TranscodeMode.class)
+  @DisplayName("Should send the advertised end with every job when the attempt carries one")
+  void shouldSendTheAdvertisedEndWithEveryJobWhenTheAttemptCarriesOne(TranscodeMode mode) {
+    var request = attemptIn(mode).advertisedEnd(Optional.of(Duration.ofMillis(60_018))).build();
+
+    var execution = mapper.map(request).getExecution();
+
+    assertThat(execution.hasAdvertisedEnd()).isTrue();
+    assertThat(execution.getAdvertisedEnd().getSeconds()).isEqualTo(60);
+    assertThat(execution.getAdvertisedEnd().getNanos()).isEqualTo(18_000_000);
   }
 
   @Test
@@ -726,8 +736,7 @@ class RemoteVariantJobMapperTest {
         .isEqualTo(MatrixCoefficients.MATRIX_COEFFICIENTS_UNSPECIFIED);
   }
 
-  // A copy changes no sample, and the worker refuses a copy that names a matrix (ADR 0013). The
-  // copy's decision holds the matrix for the encoded lower variants beside it.
+  // An untagged copy still holds the matrix for the encoded lower variants beside it.
   @Test
   @DisplayName("Should leave the assumed matrix unspecified when the job copies the video")
   void shouldLeaveTheAssumedMatrixUnspecifiedWhenTheJobCopiesTheVideo() {
@@ -744,6 +753,33 @@ class RemoteVariantJobMapperTest {
     assertThat(video.getMode()).isEqualTo(VideoMode.VIDEO_MODE_COPY);
     assertThat(video.getAssumedSourceMatrix())
         .isEqualTo(MatrixCoefficients.MATRIX_COEFFICIENTS_UNSPECIFIED);
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @ParameterizedTest
+  @CsvSource({"BT709, MATRIX_COEFFICIENTS_BT709", "BT601, MATRIX_COEFFICIENTS_SMPTE170M"})
+  @DisplayName("Should send the assumed matrix when the copy lists its rewrite")
+  void shouldSendTheAssumedMatrixWhenTheCopyListsItsRewrite(
+      AssumedSourceMatrix matrix, MatrixCoefficients sent) {
+    var request =
+        copyAttempt()
+            .transcodeDecision(
+                copyDecisionBuilder()
+                    .assumedSourceMatrix(Optional.of(matrix))
+                    .videoBitstreamRewrites(
+                        List.of(
+                            com.streamarr.server.domain.streaming.BitstreamRewrite
+                                .NAME_ASSUMED_SOURCE_MATRIX))
+                    .build())
+            .build();
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.getAssumedSourceMatrix()).isEqualTo(sent);
+    assertThat(video.getBitstreamRewritesList())
+        .containsExactly(BitstreamRewrite.BITSTREAM_REWRITE_NAME_ASSUMED_SOURCE_MATRIX);
+    assertThat(video.getOutputDynamicRange().getCompatibleBase())
+        .isEqualTo(CompatibleBase.COMPATIBLE_BASE_SDR);
   }
 
   private static TranscodeRequest encodeAttemptAssuming(Optional<AssumedSourceMatrix> assumed) {

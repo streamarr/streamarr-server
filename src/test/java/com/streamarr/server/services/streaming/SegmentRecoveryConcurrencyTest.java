@@ -18,6 +18,7 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ServerSettingsFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
+import com.streamarr.server.fixtures.UnservedSegmentsFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import java.util.Set;
@@ -229,6 +230,7 @@ class SegmentRecoveryConcurrencyTest {
             .producerLifecycle(lifecycle)
             .heldRequests(race.executor.heldSegmentRequests())
             .eventPublisher(new CapturingEventPublisher())
+            .unservedSegments(UnservedSegmentsFixture.unservedSegments())
             .build();
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();

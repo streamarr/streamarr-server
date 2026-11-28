@@ -25,7 +25,6 @@ import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
-import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoSampleEntry;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.fakes.FakeCreatingStreamingService;
@@ -37,8 +36,6 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.Au
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecProfileOutsideCodecFamily;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecProfilesMissing;
-import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecTierMissing;
-import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecTierNotApplicable;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CompatibleBasesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DirectPlaySampleEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionLevelNotPositive;
@@ -60,7 +57,6 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.Vi
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoMaximumInvalid;
 import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -358,14 +354,8 @@ class PlaybackSessionCapabilityDeclarationTest {
         hevcEntryBuilder()
             .codecProfiles(
                 List.of(
-                    codecProfileBuilder(VideoCodecProfile.HEVC_MAIN)
-                        .maxLevel(51)
-                        .maxTier(Optional.of(VideoCodecTier.MAIN))
-                        .build(),
-                    codecProfileBuilder(VideoCodecProfile.H264_HIGH)
-                        .maxLevel(0)
-                        .maxTier(Optional.of(VideoCodecTier.HIGH))
-                        .build(),
+                    codecProfileBuilder(VideoCodecProfile.HEVC_MAIN).maxLevel(51).build(),
+                    codecProfileBuilder(VideoCodecProfile.H264_HIGH).maxLevel(0).build(),
                     codecProfileBuilder(VideoCodecProfile.HEVC_MAIN_10).maxLevel(-1).build()))
             .build();
     var declaration = defaultDeclarationBuilder().video(List.of(entry)).build();
@@ -376,22 +366,7 @@ class PlaybackSessionCapabilityDeclarationTest {
                 List.of(
                     new CodecProfileOutsideCodecFamily(0, 1),
                     new CodecLevelNotPositive(0, 1),
-                    new CodecTierNotApplicable(0, 1),
-                    new CodecLevelNotPositive(0, 2),
-                    new CodecTierMissing(0, 2))));
-  }
-
-  @Test
-  @DisplayName("Should refuse an AV1 codec profile when it names no maximum tier")
-  void shouldRefuseAnAv1CodecProfileWhenItNamesNoMaximumTier() {
-    var entry =
-        av1EntryBuilder()
-            .codecProfiles(
-                List.of(codecProfileBuilder(VideoCodecProfile.AV1_MAIN).maxLevel(51).build()))
-            .build();
-
-    assertThat(start(defaultDeclarationBuilder().video(List.of(entry)).build()))
-        .isEqualTo(Outcome.rejected(new CodecTierMissing(0, 0)));
+                    new CodecLevelNotPositive(0, 2))));
   }
 
   @Test
@@ -562,11 +537,7 @@ class PlaybackSessionCapabilityDeclarationTest {
         hevcEntryBuilder()
             .codecProfiles(
                 Collections.nCopies(
-                    32,
-                    codecProfileBuilder(VideoCodecProfile.HEVC_MAIN)
-                        .maxLevel(51)
-                        .maxTier(Optional.of(VideoCodecTier.MAIN))
-                        .build()))
+                    32, codecProfileBuilder(VideoCodecProfile.HEVC_MAIN).maxLevel(51).build()))
             .compatibleBases(Collections.nCopies(32, CompatibleBase.SDR))
             .dolbyVisionProfiles(Collections.nCopies(32, dolbyVision(PROFILE_8_1)))
             .directPlayContainers(Collections.nCopies(32, SourceContainer.MOV))

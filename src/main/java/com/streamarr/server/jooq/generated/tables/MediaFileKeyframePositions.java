@@ -34,6 +34,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -65,12 +66,6 @@ public class MediaFileKeyframePositions extends TableImpl<MediaFileKeyframePosit
      * <code>public.media_file_keyframe_positions.media_file_id</code>.
      */
     public final TableField<MediaFileKeyframePositionsRecord, UUID> MEDIA_FILE_ID = createField(DSL.name("media_file_id"), SQLDataType.UUID.nullable(false), this, "");
-
-    /**
-     * The column
-     * <code>public.media_file_keyframe_positions.keyframe_status</code>.
-     */
-    public final TableField<MediaFileKeyframePositionsRecord, String> KEYFRAME_STATUS = createField(DSL.name("keyframe_status"), SQLDataType.CLOB, this, "");
 
     /**
      * The column
@@ -113,12 +108,18 @@ public class MediaFileKeyframePositions extends TableImpl<MediaFileKeyframePosit
      */
     public final TableField<MediaFileKeyframePositionsRecord, byte[]> POSITIONS_DIGEST = createField(DSL.name("positions_digest"), SQLDataType.BLOB, this, "");
 
+    /**
+     * The column
+     * <code>public.media_file_keyframe_positions.keyframe_positions_admitted</code>.
+     */
+    public final TableField<MediaFileKeyframePositionsRecord, Boolean> KEYFRAME_POSITIONS_ADMITTED = createField(DSL.name("keyframe_positions_admitted"), SQLDataType.BOOLEAN, this, "");
+
     private MediaFileKeyframePositions(Name alias, Table<MediaFileKeyframePositionsRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
 
     private MediaFileKeyframePositions(Name alias, Table<MediaFileKeyframePositionsRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -174,7 +175,7 @@ public class MediaFileKeyframePositions extends TableImpl<MediaFileKeyframePosit
 
         @Override
         public MediaFileKeyframePositionsPath as(Table<?> alias) {
-            return new MediaFileKeyframePositionsPath(alias.getQualifiedName(), this);
+            return new MediaFileKeyframePositionsPath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -190,7 +191,7 @@ public class MediaFileKeyframePositions extends TableImpl<MediaFileKeyframePosit
 
     @Override
     public List<ForeignKey<MediaFileKeyframePositionsRecord, ?>> getReferences() {
-        return Arrays.asList(Keys.MEDIA_FILE_KEYFRAME_POSITIONS__KEYFRAME_POSITIONS_REQUIRE_KNOWN_STATUS);
+        return Arrays.asList(Keys.MEDIA_FILE_KEYFRAME_POSITIONS__KEYFRAME_POSITIONS_REQUIRE_ADMITTING_STATUS);
     }
 
     private transient MediaFileContainerInfoPath _mediaFileContainerInfo;
@@ -201,7 +202,7 @@ public class MediaFileKeyframePositions extends TableImpl<MediaFileKeyframePosit
      */
     public MediaFileContainerInfoPath mediaFileContainerInfo() {
         if (_mediaFileContainerInfo == null)
-            _mediaFileContainerInfo = new MediaFileContainerInfoPath(this, Keys.MEDIA_FILE_KEYFRAME_POSITIONS__KEYFRAME_POSITIONS_REQUIRE_KNOWN_STATUS, null);
+            _mediaFileContainerInfo = new MediaFileContainerInfoPath(this, Keys.MEDIA_FILE_KEYFRAME_POSITIONS__KEYFRAME_POSITIONS_REQUIRE_ADMITTING_STATUS, null);
 
         return _mediaFileContainerInfo;
     }
@@ -229,7 +230,7 @@ public class MediaFileKeyframePositions extends TableImpl<MediaFileKeyframePosit
 
     @Override
     public MediaFileKeyframePositions as(Table<?> alias) {
-        return new MediaFileKeyframePositions(alias.getQualifiedName(), this);
+        return new MediaFileKeyframePositions(alias.getUnqualifiedName(), this);
     }
 
     /**

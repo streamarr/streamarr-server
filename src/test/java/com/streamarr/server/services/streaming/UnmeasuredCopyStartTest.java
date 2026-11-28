@@ -79,6 +79,7 @@ class UnmeasuredCopyStartTest {
             .runtimeRegistry(runtimeRegistry)
             .producerLifecycle(rig.lifecycle())
             .deliveryCoordinator(rig.coordinator())
+            .unservedSegments(rig.unservedSegments())
             .meterRegistry(meters)
             .languagePreferences((_, _) -> List.of())
             .build();
