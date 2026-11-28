@@ -271,6 +271,10 @@ class RemotePlaybackIT {
                     executableRequestBuilder(shared, mediaFile)
                         .framerate(OptionalDouble.of(23.976))
                         .transcodeDecision(decision)
+                        .readFromLastKeyframePresentingAtOrBefore(
+                            decision.transcodeMode().copiesVideo()
+                                ? Optional.empty()
+                                : Optional.of(Duration.ofMillis(11_500)))
                         .build())
             .toList();
 

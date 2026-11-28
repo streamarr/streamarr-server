@@ -106,7 +106,7 @@ public final class WorkerContainerFixture implements AutoCloseable {
     var script =
         """
         #!/bin/bash
-        if [[ -z ${STREAMARR_JOB_ATTEMPT_ID:-} || ${*: -3} == "-f framecrc pipe:1" ]]; then
+        if [[ -z ${STREAMARR_JOB_ATTEMPT_ID:-} || ${*: -3} == "-f framecrc pipe:"[12] ]]; then
           exec ffmpeg "$@"
         fi
         for argument in "$@"; do

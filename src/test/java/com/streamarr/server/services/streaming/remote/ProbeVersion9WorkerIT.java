@@ -415,6 +415,10 @@ class ProbeVersion9WorkerIT extends AbstractIntegrationTest {
         seek.sessionId(sessionId)
             .seekPosition(index * SEGMENT_SECONDS)
             .startSequenceNumber(index)
+            .readFromLastKeyframePresentingAtOrBefore(
+                index == 0
+                    ? Optional.empty()
+                    : Optional.of(Duration.ofSeconds(index * SEGMENT_SECONDS).minusMillis(500)))
             .build());
     try {
       awaitSegment(sessionId, index);
