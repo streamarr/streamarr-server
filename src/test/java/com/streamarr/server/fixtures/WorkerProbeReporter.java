@@ -1,5 +1,7 @@
 package com.streamarr.server.fixtures;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptReportMetadata;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
@@ -43,6 +45,7 @@ public final class WorkerProbeReporter {
   /** As {@link #report(ProbeAttemptReport)}, in messages of at most this many bytes of it. */
   public CompletableFuture<ReportProbeAttemptResponse> report(
       ProbeAttemptReport report, int largestMessageBytes) {
+    assertThat(largestMessageBytes).as("The report message size").isPositive();
     var answer = new CompletableFuture<ReportProbeAttemptResponse>();
     var call =
         TranscodeWorkerServiceGrpc.newStub(channel)
