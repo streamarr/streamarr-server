@@ -128,7 +128,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     chapters.remove(publication.mediaFileId());
     dropMeasurementUnlessSnapshotMatches(publication.mediaFileId(), publication.snapshot());
     if (publication.outcome() instanceof ProbeOutcome.Success success) {
-      var stored = keptPositions.orElse(success.keyframes());
+      var stored = keptPositions.orElseGet(() -> keyframesFromPublication(success.keyframes()));
       keyframes.put(publication.mediaFileId(), stored);
       chapters.put(publication.mediaFileId(), success.container().chapters());
       success
@@ -137,6 +137,14 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     }
 
     return true;
+  }
+
+  private static KeyframeKnowledge keyframesFromPublication(KeyframeKnowledge supplied) {
+    return switch (supplied) {
+      case KeyframeKnowledge.PacketScanRequiredWithKeptPositions(var reason, _) ->
+          new KeyframeKnowledge.PacketScanRequired(reason);
+      default -> supplied;
+    };
   }
 
   // PostgreSQL keeps a packet scan's positions when a later probe of the same snapshot requires a
@@ -162,7 +170,13 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   }
 
   @Override
-  public synchronized boolean publishKeyframePacketScan(KeyframePacketScanPublication publication) {
+  public boolean publishKeyframePacketScan(KeyframePacketScanPublication publication) {
+    return rowLocks.holding(
+        publication.mediaFileId(), () -> publishKeyframePacketScanHoldingRowLock(publication));
+  }
+
+  private synchronized boolean publishKeyframePacketScanHoldingRowLock(
+      KeyframePacketScanPublication publication) {
     var mediaFileId = publication.mediaFileId();
     if (!owesPacketScanFor(
         mediaFileId, new ProbeInputs(publication.snapshot(), publication.probeVersion()))) {
@@ -195,7 +209,12 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   }
 
   @Override
-  public synchronized boolean publishKeyframePacketScanFailure(
+  public boolean publishKeyframePacketScanFailure(UUID mediaFileId, ProbeInputs inputs) {
+    return rowLocks.holding(
+        mediaFileId, () -> publishKeyframePacketScanFailureHoldingRowLock(mediaFileId, inputs));
+  }
+
+  private synchronized boolean publishKeyframePacketScanFailureHoldingRowLock(
       UUID mediaFileId, ProbeInputs inputs) {
     if (!owesPacketScanFor(mediaFileId, inputs)) {
       return false;

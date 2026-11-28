@@ -46,6 +46,23 @@ public interface KeptKeyframePositionsRepositoryContract {
   UUID createMediaFile();
 
   @Test
+  @DisplayName("Should discard supplied kept positions when a probe publication claims them")
+  default void shouldDiscardSuppliedKeptPositionsWhenProbePublicationClaimsThem() {
+    var mediaFileId = createMediaFile();
+
+    var published =
+        repository()
+            .publish(
+                publicationBuilder(mediaFileId)
+                    .probeVersion(ProbeVersion.CURRENT)
+                    .outcome(outcome(keptScanned()))
+                    .build());
+
+    assertThat(published).isTrue();
+    assertThat(repository().findKeyframeKnowledge(mediaFileId)).contains(packetScanRequired());
+  }
+
+  @Test
   @DisplayName(
       "Should require a packet scan with the scanned positions kept when a later probe version"
           + " publishes for the same snapshot")
