@@ -2012,6 +2012,7 @@ public class ProducerLifecycleService {
       StreamSession session, String variantLabel, int startSequenceNumber) {
     var frameRate = session.getTranscodeDecision().outputFrameRate();
     var timeline = timelineOf(session);
+    var readTime = timeline.lastKeyframeReadTime(startSequenceNumber);
     return TranscodeRequest.builder()
         .sessionId(session.getSessionId())
         .variantLabel(variantLabel)
@@ -2019,8 +2020,8 @@ public class ProducerLifecycleService {
         .sourcePath(session.getSourcePath())
         .seekPosition(timeline.mediaSegmentStartSeconds(startSequenceNumber))
         .keyframeSeekPosition(timeline.keyframeSeekPosition(startSequenceNumber))
-        .readFromLastKeyframePresentingAtOrBefore(
-            timeline.lastKeyframeReadTime(startSequenceNumber))
+        .readFromLastKeyframePresentingAtOrBefore(readTime)
+        .videoEnd(readTime.flatMap(_ -> session.getMediaProbe().scannedVideoEnd()))
         .exactSegmentStarts(MediaSegmentTimelines.exactSegmentStartsOf(session, timeline))
         .targetSegmentDuration(timeline.targetSegmentDurationSeconds())
         .framerate(

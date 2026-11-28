@@ -687,9 +687,9 @@ message TranscodeExecution {
   // This field holds where the chosen video stream ends: the latest
   // presentation time plus duration of its packets, on seek_position's
   // timeline. A packet without a presentation time counts at its decode time.
-  // The server sets this field only from a keyframe packet scan. Without this
-  // field, the video's end is unknown. A first picture check stops reading
-  // once a copied video packet reaches that end (ADR 0037, seek).
+  // The server sets this field only from a keyframe packet scan. Without it,
+  // the video's end is unknown. The worker uses this end to bound first
+  // picture checks under ADR 0037's seek rules.
   google.protobuf.Duration video_end = 13;
 }
 

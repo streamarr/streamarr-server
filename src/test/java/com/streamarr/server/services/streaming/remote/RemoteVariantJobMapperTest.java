@@ -407,6 +407,36 @@ class RemoteVariantJobMapperTest {
   }
 
   @Test
+  @DisplayName(
+      "Should preserve the scanned video end when an encoded attempt bounds its seek check")
+  void shouldPreserveTheScannedVideoEndWhenAnEncodedAttemptBoundsItsSeekCheck() {
+    var request =
+        encodeAttempt("h264")
+            .startSequenceNumber(3)
+            .readFromLastKeyframePresentingAtOrBefore(Optional.of(Duration.ofMillis(17_500)))
+            .videoEnd(Optional.of(Duration.ofSeconds(12).plusNanos(123_456_789)))
+            .build();
+
+    var execution = mapper.map(request).getExecution();
+
+    assertThat(execution.hasVideoEnd()).isTrue();
+    assertThat(execution.getVideoEnd().getSeconds()).isEqualTo(12);
+    assertThat(execution.getVideoEnd().getNanos()).isEqualTo(123_456_789);
+  }
+
+  @Test
+  @DisplayName("Should omit the video end when a seek check carries no scanned bound")
+  void shouldOmitTheVideoEndWhenASeekCheckCarriesNoScannedBound() {
+    var request =
+        encodeAttempt("h264")
+            .startSequenceNumber(3)
+            .readFromLastKeyframePresentingAtOrBefore(Optional.of(Duration.ofMillis(17_500)))
+            .build();
+
+    assertThat(mapper.map(request).getExecution().hasVideoEnd()).isFalse();
+  }
+
+  @Test
   @DisplayName("Should send the forced H.264 values when the job encodes H.264")
   void shouldSendTheForcedH264ValuesWhenTheJobEncodesH264() {
     var video = mapper.map(encodeAttempt("h264").build()).getDecision().getVideo();
