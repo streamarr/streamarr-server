@@ -128,7 +128,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     chapters.remove(publication.mediaFileId());
     dropMeasurementUnlessSnapshotMatches(publication.mediaFileId(), publication.snapshot());
     if (publication.outcome() instanceof ProbeOutcome.Success success) {
-      var stored = keptPositions.orElseGet(() -> keyframesFromPublication(success.keyframes()));
+      var stored = keptPositions.orElse(success.keyframes());
       keyframes.put(publication.mediaFileId(), stored);
       chapters.put(publication.mediaFileId(), success.container().chapters());
       success
@@ -139,21 +139,12 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     return true;
   }
 
-  private static KeyframeKnowledge keyframesFromPublication(KeyframeKnowledge supplied) {
-    return switch (supplied) {
-      case KeyframeKnowledge.PacketScanRequiredWithKeptPositions(var reason, _) ->
-          new KeyframeKnowledge.PacketScanRequired(reason);
-      default -> supplied;
-    };
-  }
-
   // PostgreSQL keeps a packet scan's positions when a later probe of the same snapshot requires a
   // packet scan again for the same chosen stream, on the current keyframe timeline.
   private Optional<KeyframeKnowledge> scannedPositionsToKeep(
       ProbePublication publication, MediaFileContainerInfo existing) {
     if (!(publication.outcome() instanceof ProbeOutcome.Success success)
-        || !(keyframesFromPublication(success.keyframes())
-            instanceof KeyframeKnowledge.PacketScanRequired(var reason))
+        || !(success.keyframes() instanceof KeyframeKnowledge.PacketScanRequired(var reason))
         || success.chosenVideoStream().isEmpty()
         || !existing.getSnapshot().equals(publication.snapshot())
         || !ProbeVersion.isOnCurrentKeyframeTimeline(existing.getProbeVersion())) {

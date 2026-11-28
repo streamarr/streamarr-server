@@ -782,10 +782,8 @@ public class MediaFileContainerInfoRepositoryCustomImpl
           case KeyframeKnowledge.Known _ ->
               new KeyframeColumns(KeyframeStatus.KNOWN.name(), null, null);
           case KeyframeKnowledge.PacketScanRequired(var reason) -> new KeyframeColumns(reason);
-          // Which positions an outcome keeps is the repository's decision, so a publication that
-          // names kept positions stores only the packet scan that it requires.
-          case KeyframeKnowledge.PacketScanRequiredWithKeptPositions(var reason, _) ->
-              new KeyframeColumns(reason);
+          case KeyframeKnowledge.PacketScanRequiredWithKeptPositions _ ->
+              throw new IllegalStateException("A publication names no kept positions");
           case KeyframeKnowledge.Unavailable(var reason) ->
               new KeyframeColumns(KeyframeStatus.UNAVAILABLE.name(), null, reason.name());
           case KeyframeKnowledge.NotReported _ -> new KeyframeColumns(null, null, null);
