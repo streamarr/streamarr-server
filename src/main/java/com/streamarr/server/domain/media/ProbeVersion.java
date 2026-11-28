@@ -15,7 +15,7 @@ public final class ProbeVersion {
   // scanned stream ends below. Each version includes the facts of every earlier version. Version 2
   // is unused. V097 deleted every result before version 4; an earlier result stays playable until
   // the re-scan stores the file's current result.
-  public static final int CURRENT = 8;
+  public static final int CURRENT = 9;
 
   // The first probe version whose keyframe positions count from the current media time zero, the
   // container start time that the probe reads (ADR 0032). Every version from this one through
