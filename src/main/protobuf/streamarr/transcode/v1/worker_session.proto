@@ -649,7 +649,7 @@ message TranscodeExecution {
   // must be greater than start_sequence_number.
   uint32 media_segment_count = 5;
   // This field holds where the attempt starts reading, on the zero-based
-  // timeline of ProbeKeyframePositionsPart. When it is set, the worker uses it
+  // timeline of ProbeAttemptReport's keyframe positions. The worker uses it
   // instead of seek_position_seconds. The server sets it on every stream copy
   // after segment 0, and on an encode from a later segment when the source's
   // keyframe positions are stored; the worker then checks the read against
