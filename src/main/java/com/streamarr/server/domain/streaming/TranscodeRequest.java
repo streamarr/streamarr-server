@@ -15,6 +15,7 @@ public record TranscodeRequest(
     @NonNull Path sourcePath,
     int seekPosition,
     @NonNull Optional<Duration> keyframeSeekPosition,
+    @NonNull Optional<Duration> readFromLastKeyframePresentingAtOrBefore,
     @NonNull Optional<ExactSegmentStarts> exactSegmentStarts,
     int targetSegmentDuration,
     @NonNull OptionalDouble framerate,
@@ -35,8 +36,12 @@ public record TranscodeRequest(
    * the source keyframe that opens its first segment, and the worker seeks there instead of to
    * {@code seekPosition} seconds. An encoded attempt after segment 0 carries one when the source's
    * keyframes are known: the time, by which the container's demuxer seeks, of the last keyframe
-   * that presents at least half a second before its first segment. Every other attempt carries
-   * none. {@code outputFrameRate} is the exact rate at which an encode runs, the source's output
+   * that presents at least half a second before its first segment. Every encoded attempt after
+   * segment 0 carries {@code readFromLastKeyframePresentingAtOrBefore}, that half a second before
+   * its first segment on the attempt's own timeline: the worker keeps the keyframe seek position
+   * when its read shows a picture by then, and otherwise finds the keyframe in the source (ADR
+   * 0037, seek). Segment-0 attempts carry neither field; stream copies never carry the read-time
+   * field. {@code outputFrameRate} is the exact rate at which an encode runs, the source's output
    * frame rate unless the variant names another; a stream copy keeps the source's timing and
    * carries none. {@code exactSegmentStarts} holds the stream session's segment list (ADR 0037):
    * every attempt of a stream copy session carries the copy's exact starts, and every attempt on a
@@ -95,6 +100,7 @@ public record TranscodeRequest(
     return new TranscodeRequestBuilder()
         .framerate(OptionalDouble.empty())
         .keyframeSeekPosition(Optional.empty())
+        .readFromLastKeyframePresentingAtOrBefore(Optional.empty())
         .exactSegmentStarts(Optional.empty())
         .outputFrameRate(Optional.empty())
         .pinnedEncoder(Optional.empty())

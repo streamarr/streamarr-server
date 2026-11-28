@@ -14,6 +14,12 @@ public sealed interface PlaybackSessionFailure {
    */
   record DolbyVisionConversionFailed() implements PlaybackSessionFailure {}
 
+  /**
+   * An encoded attempt that read the source from a seek opened its first segment late, so pictures
+   * are missing. Every attempt that reads the source the same way misses them too (ADR 0037, seek).
+   */
+  record FirstSegmentOpenedLate() implements PlaybackSessionFailure {}
+
   record FixedFormatFailed(@NonNull PlaybackFormatFailure reason)
       implements PlaybackSessionFailure {}
 

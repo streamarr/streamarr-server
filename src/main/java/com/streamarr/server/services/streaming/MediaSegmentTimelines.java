@@ -89,7 +89,7 @@ final class MediaSegmentTimelines {
     return session.getMediaProbe().keyframes().usablePositions().map(copy::exactStartsIn);
   }
 
-  // Without the keyframes, the worker reads from one period before the attempt's first segment.
+  // Without the keyframes, the worker finds the keyframe that an attempt reads from in the source.
   private static MediaSegmentTimeline encodeIn(
       MediaProbe probe, MediaSegmentTimeline.PlainGrid grid) {
     var positions = probe.keyframes().usablePositions();

@@ -351,6 +351,9 @@ public class StreamingResolver {
       case PlaybackSessionFailure.InvalidSpecification() ->
           new PlaybackSessionError.PlaybackInvalidSpecificationError(
               "This video can't be played right now. Ask your server admin to check the server logs.");
+      case PlaybackSessionFailure.FirstSegmentOpenedLate() ->
+          new PlaybackSessionError.PlaybackInvalidSpecificationError(
+              "This video can't be played from this point. Try another point, or ask your server admin to check the server logs.");
       case PlaybackSessionFailure.DolbyVisionConversionFailed() ->
           new PlaybackSessionError.PlaybackOutputMismatchError(
               "This video's Dolby Vision can't be converted for this device. Set Quality to Auto and try again. If Quality is already Auto, ask your server admin to check the file.");

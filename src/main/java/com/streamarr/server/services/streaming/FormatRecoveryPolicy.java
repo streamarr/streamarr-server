@@ -52,6 +52,7 @@ record FormatRecoveryPolicy(int maximumFormatAttempts) {
           true;
       case PlaybackSessionFailure.OutputMismatch _,
           PlaybackSessionFailure.InvalidSpecification _,
+          PlaybackSessionFailure.FirstSegmentOpenedLate _,
           PlaybackSessionFailure.AttemptsExhausted _,
           PlaybackSessionFailure.CreationRejected _,
           PlaybackSessionFailure.StartupFailed _ ->
