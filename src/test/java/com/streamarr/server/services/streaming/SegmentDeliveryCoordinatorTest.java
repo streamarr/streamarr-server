@@ -30,6 +30,7 @@ import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
+import com.streamarr.server.fixtures.UnservedSegmentsFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
@@ -174,6 +175,7 @@ class SegmentDeliveryCoordinatorTest {
         .runtimeRegistry(runtimeRegistry)
         .producerLifecycle(lifecycle)
         .deliveryCoordinator(coordinator)
+        .unservedSegments(UnservedSegmentsFixture.unservedSegments())
         .build()
         .destroySession(sessionId);
   }
@@ -1269,6 +1271,7 @@ class SegmentDeliveryCoordinatorTest {
             .runtimeRegistry(runtimeRegistry)
             .producerLifecycle(rig.lifecycle())
             .deliveryCoordinator(rig.coordinator())
+            .unservedSegments(rig.unservedSegments())
             .build();
 
     gatingExecutor.holdTargetedStarts();

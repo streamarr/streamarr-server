@@ -28,6 +28,7 @@ import com.streamarr.server.services.streaming.ShortCopyListener;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
+import com.streamarr.server.services.streaming.UnservedSegments;
 import com.streamarr.server.services.streaming.local.FileStoreSegmentFolderSpace;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
@@ -126,12 +127,14 @@ public class StreamingConfig {
       SegmentStore segmentStore,
       ProducerLifecycleService producerLifecycleService,
       HeldSegmentRequests heldSegmentRequests,
-      ApplicationEventPublisher eventPublisher) {
+      ApplicationEventPublisher eventPublisher,
+      UnservedSegments unservedSegments) {
     return SegmentDeliveryCoordinator.builder()
         .segmentStore(segmentStore)
         .producerLifecycle(producerLifecycleService)
         .heldRequests(heldSegmentRequests)
         .eventPublisher(eventPublisher)
+        .unservedSegments(unservedSegments)
         .build();
   }
 
@@ -181,7 +184,8 @@ public class StreamingConfig {
       ProducerLifecycleService producerLifecycleService,
       SegmentDeliveryCoordinator segmentDeliveryCoordinator,
       MeterRegistry meterRegistry,
-      PlaybackLanguagePreferences languagePreferences) {
+      PlaybackLanguagePreferences languagePreferences,
+      UnservedSegments unservedSegments) {
     return HlsStreamingService.builder()
         .mediaFileRepository(mediaFileRepository)
         .transcodeExecutor(transcodeExecutor)
@@ -196,6 +200,7 @@ public class StreamingConfig {
         .deliveryCoordinator(segmentDeliveryCoordinator)
         .meterRegistry(meterRegistry)
         .languagePreferences(languagePreferences)
+        .unservedSegments(unservedSegments)
         .build();
   }
 }

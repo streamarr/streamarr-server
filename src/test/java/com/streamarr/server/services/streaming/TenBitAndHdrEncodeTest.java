@@ -1352,6 +1352,7 @@ class TenBitAndHdrEncodeTest {
         .runtimeRegistry(registry)
         .producerLifecycle(rig.lifecycle())
         .deliveryCoordinator(rig.coordinator())
+        .unservedSegments(rig.unservedSegments())
         .meterRegistry(meters)
         .build();
   }

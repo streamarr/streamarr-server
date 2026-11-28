@@ -427,7 +427,7 @@ class PlaybackSessionServiceTest {
     var replacement = streams.createdCommands.getLast().streamSessionId();
     events.clear();
 
-    service.onMediaSegmentStored(new MediaSegmentStoredEvent(replacement));
+    service.onMediaSegmentStored(new MediaSegmentStoredEvent(replacement, "segment0.m4s"));
 
     assertThat(events.getEventsOfType(ProducedRangeMayHaveMovedEvent.class))
         .containsExactly(new ProducedRangeMayHaveMovedEvent(initial.playbackSessionId()));
@@ -444,8 +444,8 @@ class PlaybackSessionServiceTest {
     service.reportFormatFailure(report(initial, command).build()).orElseThrow();
     events.clear();
 
-    service.onMediaSegmentStored(new MediaSegmentStoredEvent(retired));
-    service.onMediaSegmentStored(new MediaSegmentStoredEvent(UUID.randomUUID()));
+    service.onMediaSegmentStored(new MediaSegmentStoredEvent(retired, "segment0.m4s"));
+    service.onMediaSegmentStored(new MediaSegmentStoredEvent(UUID.randomUUID(), "segment0.m4s"));
 
     assertThat(events.getEventsOfType(ProducedRangeMayHaveMovedEvent.class)).isEmpty();
   }
@@ -3669,7 +3669,7 @@ class PlaybackSessionServiceTest {
     }
 
     @Override
-    public boolean destroySessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
+    public boolean evictSessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
       throw new UnsupportedOperationException();
     }
 

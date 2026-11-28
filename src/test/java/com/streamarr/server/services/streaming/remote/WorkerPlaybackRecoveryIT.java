@@ -566,6 +566,7 @@ class WorkerPlaybackRecoveryIT {
               .runtimeRegistry(registry)
               .producerLifecycle(lifecycle.lifecycle())
               .deliveryCoordinator(delivery)
+              .unservedSegments(lifecycle.unservedSegments())
               .build();
       sessions =
           PlaybackSessionService.builder()

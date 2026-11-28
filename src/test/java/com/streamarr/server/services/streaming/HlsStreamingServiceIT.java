@@ -47,6 +47,8 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.library.MediaProbeTask;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
+import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.persistence.EntityManager;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -65,6 +67,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -85,6 +88,8 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   @Autowired private SchedulerClient client;
   @Autowired private EntityManager entityManager;
   @Autowired private PlatformTransactionManager transactionManager;
+  @Autowired private ApplicationEventPublisher eventPublisher;
+  @Autowired private MeterRegistry meterRegistry;
 
   @TempDir Path directory;
 
@@ -150,6 +155,30 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
     streamingService.destroySession(session.getSessionId());
 
     assertThat(streamingService.accessSession(playbackRequest(session))).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should count a stored media segment as unserved when its stream session is destroyed"
+          + " before any request was answered with the segment")
+  void shouldCountAStoredMediaSegmentAsUnservedWhenItsStreamSessionIsDestroyedBeforeAnyAnswer() {
+    storeProbe(defaultProbeBuilder().build());
+    var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
+    var storedSegmentName = SegmentNames.mediaSegmentName(0);
+    FAKE_SEGMENT_STORE.addSegment(session.getSessionId(), storedSegmentName, new byte[] {1});
+    var countedBefore = unservedSegmentsOfEndedSessions();
+    eventPublisher.publishEvent(
+        new MediaSegmentStoredEvent(session.getSessionId(), storedSegmentName));
+
+    streamingService.destroySession(session.getSessionId());
+
+    assertThat(unservedSegmentsOfEndedSessions() - countedBefore).isEqualTo(1);
+  }
+
+  private double unservedSegmentsOfEndedSessions() {
+    return meterRegistry
+        .counter("streamarr.streaming.unserved_segments", "cause", "session_ended")
+        .count();
   }
 
   @Test

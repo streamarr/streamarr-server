@@ -3630,6 +3630,7 @@ class HlsStreamingServiceTest {
         .runtimeRegistry(registry)
         .producerLifecycle(rig.lifecycle())
         .deliveryCoordinator(rig.coordinator())
+        .unservedSegments(rig.unservedSegments())
         .meterRegistry(meters)
         .languagePreferences(
             (profileId, file) -> languagePreferences.audioLanguagesFor(profileId, file))

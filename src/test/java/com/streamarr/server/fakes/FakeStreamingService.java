@@ -70,7 +70,7 @@ public final class FakeStreamingService implements StreamingService {
   }
 
   @Override
-  public boolean destroySessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
+  public boolean evictSessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
     if (!registry.removeIfLastAccessedBefore(sessionId, cutoff)) {
       return false;
     }

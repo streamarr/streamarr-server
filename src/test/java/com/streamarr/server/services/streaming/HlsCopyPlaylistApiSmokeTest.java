@@ -185,6 +185,7 @@ class HlsCopyPlaylistApiSmokeTest {
             .runtimeRegistry(sessionRegistry)
             .producerLifecycle(producerLifecycle)
             .deliveryCoordinator(rig.coordinator())
+            .unservedSegments(rig.unservedSegments())
             .build();
     playbackSessions = PlaybackSessionFixture.playbackServiceBuilder(streamingService).build();
     var directPlayMetrics = new DirectPlayMetrics(new SimpleMeterRegistry());

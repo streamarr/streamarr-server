@@ -200,7 +200,7 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
     }
 
     @Override
-    public boolean destroySessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
+    public boolean evictSessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
       return registry.removeIfLastAccessedBefore(sessionId, cutoff);
     }
 
@@ -339,7 +339,7 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
             playback.path("currentFormatAttempt").path("streamSession").path("id").asString());
 
     storeMediaSegments(streamId, 0);
-    eventPublisher.publishEvent(new MediaSegmentStoredEvent(streamId));
+    eventPublisher.publishEvent(new MediaSegmentStoredEvent(streamId, "segment0.m4s"));
 
     var produced = nextChange(socket, playbackId).path("activeStream");
     assertProducedRange("subscription", produced.path("producedRange"), 0, 6);
