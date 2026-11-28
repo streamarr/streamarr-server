@@ -49,6 +49,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /**
  * Real-worker proof that an encoded variant serves every media segment that its playlist
@@ -233,14 +235,17 @@ class HlsEncodedEndSmokeTest {
 
   // Segment 7 starts 30 s after the video's end, past the running attempt's relocation gap, so the
   // request starts a job attempt there.
-  @Test
+  @ParameterizedTest(name = "{0}: stored keyframes = {1}")
+  @CsvSource({"mp4, true", "ts, false"})
   @DisplayName(
       "Should serve a segment long after the video's end with the held last frame when a player"
           + " seeks there")
-  void shouldServeASegmentLongAfterTheVideosEndWithTheHeldLastFrameWhenAPlayerSeeksThere()
-      throws Exception {
-    var source = generateSource("video-ends-at-12-of-48.mp4", "24", 12, 48);
-    var session = startedEncode(source, copiedAudioEncode());
+  void shouldServeASegmentLongAfterTheVideosEndWithTheHeldLastFrameWhenAPlayerSeeksThere(
+      String sourceFormat, boolean hasStoredKeyframes) throws Exception {
+    var source = generateSource("video-ends-at-12-of-54." + sourceFormat, "24", 12, 54);
+    var probe = probe(source);
+    assertThat(probe.keyframes().usablePositions().isPresent()).isEqualTo(hasStoredKeyframes);
+    var session = startedEncode(source, probe, copiedAudioEncode());
     var firstAttempt = session.getHandle().orElseThrow().attemptId();
 
     assertThat(deliveryOf(session, "segment7.m4s"))
