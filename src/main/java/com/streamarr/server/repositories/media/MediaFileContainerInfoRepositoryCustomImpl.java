@@ -164,7 +164,6 @@ public class MediaFileContainerInfoRepositoryCustomImpl
         .execute();
     var changes = dsl.newRecord(MEDIA_FILE_CONTAINER_INFO);
     setKeyframeStatus(changes, keyframes);
-    changes.setKeyframePacketScanReason(null);
     dsl.update(MEDIA_FILE_CONTAINER_INFO)
         .set(changes)
         .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(mediaFileId))
@@ -778,25 +777,29 @@ public class MediaFileContainerInfoRepositoryCustomImpl
 
   private static void setKeyframeStatus(
       MediaFileContainerInfoRecord row, KeyframeKnowledge keyframes) {
-    switch (keyframes) {
-      case KeyframeKnowledge.Known _ -> row.setKeyframeStatus(KeyframeStatus.KNOWN.name());
-      case KeyframeKnowledge.PacketScanRequired(var reason) -> setPacketScanRequired(row, reason);
-      // Which positions an outcome keeps is the repository's decision, so a publication that names
-      // kept positions stores only the packet scan that it requires.
-      case KeyframeKnowledge.PacketScanRequiredWithKeptPositions(var reason, _) ->
-          setPacketScanRequired(row, reason);
-      case KeyframeKnowledge.Unavailable(var reason) -> {
-        row.setKeyframeStatus(KeyframeStatus.UNAVAILABLE.name());
-        row.setKeyframesUnavailableReason(reason.name());
-      }
-      case KeyframeKnowledge.NotReported _ -> row.setKeyframeStatus(null);
-    }
+    var columns =
+        switch (keyframes) {
+          case KeyframeKnowledge.Known _ ->
+              new KeyframeColumns(KeyframeStatus.KNOWN.name(), null, null);
+          case KeyframeKnowledge.PacketScanRequired(var reason) -> new KeyframeColumns(reason);
+          // Which positions an outcome keeps is the repository's decision, so a publication that
+          // names kept positions stores only the packet scan that it requires.
+          case KeyframeKnowledge.PacketScanRequiredWithKeptPositions(var reason, _) ->
+              new KeyframeColumns(reason);
+          case KeyframeKnowledge.Unavailable(var reason) ->
+              new KeyframeColumns(KeyframeStatus.UNAVAILABLE.name(), null, reason.name());
+          case KeyframeKnowledge.NotReported _ -> new KeyframeColumns(null, null, null);
+        };
+    row.setKeyframeStatus(columns.status());
+    row.setKeyframePacketScanReason(columns.packetScanReason());
+    row.setKeyframesUnavailableReason(columns.unavailableReason());
   }
 
-  private static void setPacketScanRequired(
-      MediaFileContainerInfoRecord row, KeyframePacketScanReason reason) {
-    row.setKeyframeStatus(KeyframeStatus.PACKET_SCAN_REQUIRED.name());
-    row.setKeyframePacketScanReason(reason.name());
+  private record KeyframeColumns(String status, String packetScanReason, String unavailableReason) {
+
+    private KeyframeColumns(KeyframePacketScanReason reason) {
+      this(KeyframeStatus.PACKET_SCAN_REQUIRED.name(), reason.name(), null);
+    }
   }
 
   private void insertKeyframePositions(UUID mediaFileId, KeyframePositions positions) {
