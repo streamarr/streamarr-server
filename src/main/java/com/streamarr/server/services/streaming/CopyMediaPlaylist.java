@@ -1,7 +1,6 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.Fraction;
-import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
@@ -39,12 +38,13 @@ public record CopyMediaPlaylist(
 
   /** The media playlist that a stream copy of the source would list. */
   static CopyMediaPlaylist of(@NonNull MediaProbe source, @NonNull StreamingProperties properties) {
-    if (!(source.keyframes() instanceof KeyframeKnowledge.Known(var positions))) {
+    var positions = source.keyframes().usablePositions();
+    if (positions.isEmpty()) {
       return UNKNOWN;
     }
 
     return MediaSegmentTimelines.streamCopyOf(source, properties)
-        .map(timeline -> of(timeline, positions))
+        .map(timeline -> of(timeline, positions.get()))
         .orElse(UNKNOWN);
   }
 

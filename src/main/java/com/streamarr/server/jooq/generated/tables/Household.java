@@ -41,6 +41,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -106,7 +107,7 @@ public class Household extends TableImpl<HouseholdRecord> {
     }
 
     private Household(Name alias, Table<HouseholdRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -159,7 +160,7 @@ public class Household extends TableImpl<HouseholdRecord> {
 
         @Override
         public HouseholdPath as(Table<?> alias) {
-            return new HouseholdPath(alias.getQualifiedName(), this);
+            return new HouseholdPath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -315,7 +316,7 @@ public class Household extends TableImpl<HouseholdRecord> {
 
     @Override
     public Household as(Table<?> alias) {
-        return new Household(alias.getQualifiedName(), this);
+        return new Household(alias.getUnqualifiedName(), this);
     }
 
     /**

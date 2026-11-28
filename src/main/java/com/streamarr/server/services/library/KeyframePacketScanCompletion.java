@@ -5,9 +5,6 @@ import com.github.kagkarlsson.scheduler.task.CompletionHandler;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.github.kagkarlsson.scheduler.task.ExecutionOperations;
 import com.github.kagkarlsson.scheduler.task.RescheduleUpdate;
-import com.streamarr.server.domain.streaming.KeyframeKnowledge;
-import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
-import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.properties.ProbeSchedulingProperties;
@@ -69,7 +66,7 @@ public class KeyframePacketScanCompletion {
       case KeyframePacketScanResult.Deferred _ ->
           retryAfter(complete, request, properties.busyWorkerRetryDelay());
       case KeyframePacketScanResult.Failed _ when request.failedScans() + 1 >= MAX_FAILED_SCANS -> {
-        markScansFailed(request);
+        outcomes.publishKeyframePacketScanFailure(request.mediaFileId(), request.inputs());
         operations.remove();
       }
       case KeyframePacketScanResult.Failed _ ->
@@ -85,17 +82,6 @@ public class KeyframePacketScanCompletion {
     scanTasks.reschedule(
         complete.getExecution(),
         RescheduleUpdate.toExecutionTime(clock.instant().plus(delay)).data(next).build());
-  }
-
-  private void markScansFailed(KeyframePacketScanTaskRequest request) {
-    outcomes.publishKeyframePacketScan(
-        KeyframePacketScanPublication.builder()
-            .mediaFileId(request.mediaFileId())
-            .snapshot(request.snapshot())
-            .probeVersion(request.probeVersion())
-            .keyframes(
-                new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED))
-            .build());
   }
 
   private static KeyframePacketScanTaskRequest withInputs(

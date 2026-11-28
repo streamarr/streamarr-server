@@ -38,26 +38,10 @@ public class MediaFileKeyframePositionsRecord extends UpdatableRecordImpl<MediaF
 
     /**
      * Setter for
-     * <code>public.media_file_keyframe_positions.keyframe_status</code>.
-     */
-    public void setKeyframeStatus(String value) {
-        set(1, value);
-    }
-
-    /**
-     * Getter for
-     * <code>public.media_file_keyframe_positions.keyframe_status</code>.
-     */
-    public String getKeyframeStatus() {
-        return (String) get(1);
-    }
-
-    /**
-     * Setter for
      * <code>public.media_file_keyframe_positions.stream_index</code>.
      */
     public void setStreamIndex(Integer value) {
-        set(2, value);
+        set(1, value);
     }
 
     /**
@@ -65,7 +49,7 @@ public class MediaFileKeyframePositionsRecord extends UpdatableRecordImpl<MediaF
      * <code>public.media_file_keyframe_positions.stream_index</code>.
      */
     public Integer getStreamIndex() {
-        return (Integer) get(2);
+        return (Integer) get(1);
     }
 
     /**
@@ -73,7 +57,7 @@ public class MediaFileKeyframePositionsRecord extends UpdatableRecordImpl<MediaF
      * <code>public.media_file_keyframe_positions.time_base_numerator</code>.
      */
     public void setTimeBaseNumerator(Integer value) {
-        set(3, value);
+        set(2, value);
     }
 
     /**
@@ -81,7 +65,7 @@ public class MediaFileKeyframePositionsRecord extends UpdatableRecordImpl<MediaF
      * <code>public.media_file_keyframe_positions.time_base_numerator</code>.
      */
     public Integer getTimeBaseNumerator() {
-        return (Integer) get(3);
+        return (Integer) get(2);
     }
 
     /**
@@ -89,7 +73,7 @@ public class MediaFileKeyframePositionsRecord extends UpdatableRecordImpl<MediaF
      * <code>public.media_file_keyframe_positions.time_base_denominator</code>.
      */
     public void setTimeBaseDenominator(Integer value) {
-        set(4, value);
+        set(3, value);
     }
 
     /**
@@ -97,7 +81,7 @@ public class MediaFileKeyframePositionsRecord extends UpdatableRecordImpl<MediaF
      * <code>public.media_file_keyframe_positions.time_base_denominator</code>.
      */
     public Integer getTimeBaseDenominator() {
-        return (Integer) get(4);
+        return (Integer) get(3);
     }
 
     /**
@@ -105,7 +89,7 @@ public class MediaFileKeyframePositionsRecord extends UpdatableRecordImpl<MediaF
      * <code>public.media_file_keyframe_positions.keyframe_count</code>.
      */
     public void setKeyframeCount(Integer value) {
-        set(5, value);
+        set(4, value);
     }
 
     /**
@@ -113,7 +97,7 @@ public class MediaFileKeyframePositionsRecord extends UpdatableRecordImpl<MediaF
      * <code>public.media_file_keyframe_positions.keyframe_count</code>.
      */
     public Integer getKeyframeCount() {
-        return (Integer) get(5);
+        return (Integer) get(4);
     }
 
     /**
@@ -121,7 +105,7 @@ public class MediaFileKeyframePositionsRecord extends UpdatableRecordImpl<MediaF
      * <code>public.media_file_keyframe_positions.encoded_times</code>.
      */
     public void setEncodedTimes(byte[] value) {
-        set(6, value);
+        set(5, value);
     }
 
     /**
@@ -129,21 +113,21 @@ public class MediaFileKeyframePositionsRecord extends UpdatableRecordImpl<MediaF
      * <code>public.media_file_keyframe_positions.encoded_times</code>.
      */
     public byte[] getEncodedTimes() {
-        return (byte[]) get(6);
+        return (byte[]) get(5);
     }
 
     /**
      * Setter for <code>public.media_file_keyframe_positions.source</code>.
      */
     public void setSource(String value) {
-        set(7, value);
+        set(6, value);
     }
 
     /**
      * Getter for <code>public.media_file_keyframe_positions.source</code>.
      */
     public String getSource() {
-        return (String) get(7);
+        return (String) get(6);
     }
 
     /**
@@ -151,7 +135,7 @@ public class MediaFileKeyframePositionsRecord extends UpdatableRecordImpl<MediaF
      * <code>public.media_file_keyframe_positions.positions_digest</code>.
      */
     public void setPositionsDigest(byte[] value) {
-        set(8, value);
+        set(7, value);
     }
 
     /**
@@ -159,7 +143,23 @@ public class MediaFileKeyframePositionsRecord extends UpdatableRecordImpl<MediaF
      * <code>public.media_file_keyframe_positions.positions_digest</code>.
      */
     public byte[] getPositionsDigest() {
-        return (byte[]) get(8);
+        return (byte[]) get(7);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_keyframe_positions.keyframe_positions_admitted</code>.
+     */
+    public void setKeyframePositionsAdmitted(Boolean value) {
+        set(8, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_keyframe_positions.keyframe_positions_admitted</code>.
+     */
+    public Boolean getKeyframePositionsAdmitted() {
+        return (Boolean) get(8);
     }
 
     // -------------------------------------------------------------------------
@@ -185,11 +185,10 @@ public class MediaFileKeyframePositionsRecord extends UpdatableRecordImpl<MediaF
     /**
      * Create a detached, initialised MediaFileKeyframePositionsRecord
      */
-    public MediaFileKeyframePositionsRecord(UUID mediaFileId, String keyframeStatus, Integer streamIndex, Integer timeBaseNumerator, Integer timeBaseDenominator, Integer keyframeCount, byte[] encodedTimes, String source, byte[] positionsDigest) {
+    public MediaFileKeyframePositionsRecord(UUID mediaFileId, Integer streamIndex, Integer timeBaseNumerator, Integer timeBaseDenominator, Integer keyframeCount, byte[] encodedTimes, String source, byte[] positionsDigest, Boolean keyframePositionsAdmitted) {
         super(MediaFileKeyframePositions.MEDIA_FILE_KEYFRAME_POSITIONS);
 
         setMediaFileId(mediaFileId);
-        setKeyframeStatus(keyframeStatus);
         setStreamIndex(streamIndex);
         setTimeBaseNumerator(timeBaseNumerator);
         setTimeBaseDenominator(timeBaseDenominator);
@@ -197,6 +196,7 @@ public class MediaFileKeyframePositionsRecord extends UpdatableRecordImpl<MediaF
         setEncodedTimes(encodedTimes);
         setSource(source);
         setPositionsDigest(positionsDigest);
+        setKeyframePositionsAdmitted(keyframePositionsAdmitted);
         resetTouchedOnNotNull();
     }
 }

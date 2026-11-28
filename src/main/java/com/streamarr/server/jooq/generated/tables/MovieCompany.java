@@ -37,6 +37,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -87,7 +88,7 @@ public class MovieCompany extends TableImpl<MovieCompanyRecord> {
     }
 
     private MovieCompany(Name alias, Table<MovieCompanyRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -140,7 +141,7 @@ public class MovieCompany extends TableImpl<MovieCompanyRecord> {
 
         @Override
         public MovieCompanyPath as(Table<?> alias) {
-            return new MovieCompanyPath(alias.getQualifiedName(), this);
+            return new MovieCompanyPath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -200,7 +201,7 @@ public class MovieCompany extends TableImpl<MovieCompanyRecord> {
 
     @Override
     public MovieCompany as(Table<?> alias) {
-        return new MovieCompany(alias.getQualifiedName(), this);
+        return new MovieCompany(alias.getUnqualifiedName(), this);
     }
 
     /**

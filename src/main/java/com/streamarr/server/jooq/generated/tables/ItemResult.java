@@ -47,6 +47,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -167,7 +168,7 @@ public class ItemResult extends TableImpl<ItemResultRecord> {
     }
 
     private ItemResult(Name alias, Table<ItemResultRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -220,7 +221,7 @@ public class ItemResult extends TableImpl<ItemResultRecord> {
 
         @Override
         public ItemResultPath as(Table<?> alias) {
-            return new ItemResultPath(alias.getQualifiedName(), this);
+            return new ItemResultPath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -337,7 +338,7 @@ public class ItemResult extends TableImpl<ItemResultRecord> {
 
     @Override
     public ItemResult as(Table<?> alias) {
-        return new ItemResult(alias.getQualifiedName(), this);
+        return new ItemResult(alias.getUnqualifiedName(), this);
     }
 
     /**

@@ -30,6 +30,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -101,7 +102,7 @@ public class ServerSettings extends TableImpl<ServerSettingsRecord> {
     }
 
     private ServerSettings(Name alias, Table<ServerSettingsRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -161,7 +162,7 @@ public class ServerSettings extends TableImpl<ServerSettingsRecord> {
 
     @Override
     public ServerSettings as(Table<?> alias) {
-        return new ServerSettings(alias.getQualifiedName(), this);
+        return new ServerSettings(alias.getUnqualifiedName(), this);
     }
 
     /**

@@ -36,6 +36,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -86,7 +87,7 @@ public class SeriesDirector extends TableImpl<SeriesDirectorRecord> {
     }
 
     private SeriesDirector(Name alias, Table<SeriesDirectorRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -139,7 +140,7 @@ public class SeriesDirector extends TableImpl<SeriesDirectorRecord> {
 
         @Override
         public SeriesDirectorPath as(Table<?> alias) {
-            return new SeriesDirectorPath(alias.getQualifiedName(), this);
+            return new SeriesDirectorPath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -199,7 +200,7 @@ public class SeriesDirector extends TableImpl<SeriesDirectorRecord> {
 
     @Override
     public SeriesDirector as(Table<?> alias) {
-        return new SeriesDirector(alias.getQualifiedName(), this);
+        return new SeriesDirector(alias.getUnqualifiedName(), this);
     }
 
     /**
