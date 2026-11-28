@@ -361,8 +361,9 @@ class HlsCopyPlaylistApiSmokeTest {
         playlist.segmentStarts().getLast() + playlist.segments().getLast().seconds();
     // The last AAC packet starts at 14.061746 s; the longest packet lasts 0.083333 s.
     // ADR 0032 adds 2 ms, then ADR 0037 rounds up to a whole millisecond.
-    assertThat(advertisedEnd).as("the playlist ends at the scanned audio end").isEqualTo(14.148);
     assertThat(advertisedEnd)
+        .as("the playlist ends at the scanned audio end")
+        .isEqualTo(14.148)
         .as("the playlist includes the last decoded audio sample")
         .isGreaterThanOrEqualTo(workerFixture.worker().decodedAudioEnd(source));
     assertThat(workerFixture.worker().audioPacketHashes(playable(playlist, served)))
