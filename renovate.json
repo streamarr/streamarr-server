@@ -74,7 +74,7 @@
       "groupName": "minor dependencies"
     },
     {
-      "description": "Cedar bundles a native engine: every upgrade is a deliberate PR that re-runs the multi-arch image self-check and CedarDependencyAlignmentTest, never an automerge",
+      "description": "Cedar bundles a native engine: every upgrade is a deliberate PR that re-runs the multi-arch image self-check, never an automerge",
       "matchPackageNames": [
         "com.cedarpolicy:cedar-java"
       ],

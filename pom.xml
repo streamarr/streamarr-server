@@ -79,9 +79,9 @@
         <checkstyle.version>14.3.0</checkstyle.version>
         <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
         <archunit.version>1.5.1</archunit.version>
-        <!-- Cedar ships a native library; upgrades re-run the multi-arch image self-check and
-             CedarDependencyAlignmentTest deliberately (renovate.json excludes it from automerge). -->
-        <cedar-java.version>4.10.0</cedar-java.version>
+        <!-- Cedar ships a native library; upgrades re-run the multi-arch image self-check
+             deliberately (renovate.json excludes it from automerge). -->
+        <cedar-java.version>4.11.0</cedar-java.version>
         <!-- cedar-java calls into its Rust engine through JNI; Java 25 warns (and a future release
              refuses) without this flag, so every JVM that loads it gets it. -->
         <native.access.args>--enable-native-access=ALL-UNNAMED</native.access.args>
