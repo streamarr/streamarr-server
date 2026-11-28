@@ -16,6 +16,7 @@ public record TranscodeRequest(
     int seekPosition,
     @NonNull Optional<Duration> keyframeSeekPosition,
     @NonNull Optional<Duration> readFromLastKeyframePresentingAtOrBefore,
+    @NonNull Optional<Duration> videoEnd,
     @NonNull Optional<ExactSegmentStarts> exactSegmentStarts,
     int targetSegmentDuration,
     @NonNull OptionalDouble framerate,
@@ -41,13 +42,15 @@ public record TranscodeRequest(
    * its first segment on the attempt's own timeline: the worker keeps the keyframe seek position
    * when its read shows a picture by then, and otherwise finds the keyframe in the source (ADR
    * 0037, seek). Segment-0 attempts carry neither field; stream copies never carry the read-time
-   * field. {@code outputFrameRate} is the exact rate at which an encode runs, the source's output
-   * frame rate unless the variant names another; a stream copy keeps the source's timing and
-   * carries none. {@code exactSegmentStarts} holds the stream session's segment list (ADR 0037):
-   * every attempt of a stream copy session carries the copy's exact starts, and every attempt on a
-   * plain grid that merges its final slot carries the grid's whole-second starts; an attempt on any
-   * other plain grid carries none. {@code advertisedEnd} is the end of the variant's last
-   * advertised media segment, up to which an encoded stream holds its last frame or pads with
+   * field. {@code videoEnd} bounds that check with the chosen video's packet-scan end, never a
+   * header or job-attempt end; it is absent when no scan measured the end or when the attempt
+   * carries no search time. {@code outputFrameRate} is the exact rate at which an encode runs, the
+   * source's output frame rate unless the variant names another; a stream copy keeps the source's
+   * timing and carries none. {@code exactSegmentStarts} holds the stream session's segment list
+   * (ADR 0037): every attempt of a stream copy session carries the copy's exact starts, and every
+   * attempt on a plain grid that merges its final slot carries the grid's whole-second starts; an
+   * attempt on any other plain grid carries none. {@code advertisedEnd} is the end of the variant's
+   * last advertised media segment, up to which an encoded stream holds its last frame or pads with
    * silence (ADR 0037, early ends).
    */
   public TranscodeRequest {
@@ -101,6 +104,7 @@ public record TranscodeRequest(
         .framerate(OptionalDouble.empty())
         .keyframeSeekPosition(Optional.empty())
         .readFromLastKeyframePresentingAtOrBefore(Optional.empty())
+        .videoEnd(Optional.empty())
         .exactSegmentStarts(Optional.empty())
         .outputFrameRate(Optional.empty())
         .pinnedEncoder(Optional.empty())

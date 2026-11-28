@@ -346,6 +346,11 @@ public record MediaProbe(
     return chosenVideoStream().flatMap(StreamInfo::endTime);
   }
 
+  /** The chosen video's packet-scan end, excluding header and job-attempt end times. */
+  public Optional<Duration> scannedVideoEnd() {
+    return chosenVideoStream().flatMap(this::scannedEndTimeOf);
+  }
+
   /**
    * Where the media that a stream session delivers ends: the later of the end times that a keyframe
    * packet scan read from the packets of the chosen video stream and of the session's audio stream,

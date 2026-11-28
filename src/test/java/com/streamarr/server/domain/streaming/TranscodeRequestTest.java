@@ -217,6 +217,7 @@ class TranscodeRequestTest {
         request.seekPosition(),
         request.keyframeSeekPosition(),
         request.readFromLastKeyframePresentingAtOrBefore(),
+        request.videoEnd(),
         request.exactSegmentStarts(),
         request.targetSegmentDuration(),
         request.framerate(),

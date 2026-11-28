@@ -2676,6 +2676,108 @@ class ProducerLifecycleServiceTest {
         new KeyframeKnowledge.NotReported());
   }
 
+  @Test
+  @DisplayName("Should bound a relocated encode's seek check by the chosen video's scanned end")
+  void shouldBoundARelocatedEncodesSeekCheckByTheChosenVideosScannedEnd() {
+    var probe =
+        defaultProbeBuilder()
+            .keyframes(new KeyframeKnowledge.NotReported())
+            .videoPlaybackFacts(
+                Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().streamIndex(3).build()))
+            .streams(
+                List.of(
+                    StreamInfo.builder().index(0).codecType("video").build(),
+                    StreamInfo.builder().index(1).codecType("audio").build(),
+                    StreamInfo.builder()
+                        .index(3)
+                        .codecType("video")
+                        .endTime(Optional.of(Duration.ofSeconds(7_200)))
+                        .build()))
+            .scannedEndTimes(
+                Map.of(
+                    0, Duration.ofSeconds(7_199),
+                    1, Duration.ofSeconds(7_100),
+                    3, Duration.ofSeconds(7_000).plusNanos(123_456_789)))
+            .build();
+    var session =
+        defaultSessionBuilder()
+            .mediaProbe(probe)
+            .transcodeDecision(
+                fullTranscodeDecision("h264").toBuilder()
+                    .videoSource(probe.videoPlaybackFacts())
+                    .build())
+            .build();
+    runtimeRegistry.save(session);
+    lifecycle.startFirstListedVariant(session);
+
+    var request = relocatedRequest(session, 100);
+
+    assertThat(request.videoEnd()).hasValue(Duration.ofSeconds(7_000).plusNanos(123_456_789));
+  }
+
+  @ParameterizedTest
+  @MethodSource("probesWithoutAScannedVideoEnd")
+  @DisplayName("Should leave the seek check unbounded when the chosen video has no scanned end")
+  void shouldLeaveTheSeekCheckUnboundedWhenTheChosenVideoHasNoScannedEnd(MediaProbe probe) {
+    var session = startedEncodedSession(probe.toBuilder());
+
+    var request = relocatedRequest(session, 100);
+
+    assertThat(request.videoEnd()).isEmpty();
+  }
+
+  private static Stream<MediaProbe> probesWithoutAScannedVideoEnd() {
+    var headerEnd =
+        defaultProbeBuilder()
+            .streams(
+                List.of(
+                    StreamInfo.builder()
+                        .index(0)
+                        .codecType("video")
+                        .endTime(Optional.of(Duration.ofSeconds(7_200)))
+                        .build()))
+            .build();
+    return Stream.of(
+        headerEnd,
+        headerEnd.toBuilder().streamsWithLearnedEnds(Set.of(0)).build(),
+        headerEnd.toBuilder().scannedEndTimes(Map.of(1, Duration.ofSeconds(7_000))).build(),
+        headerEnd.toBuilder()
+            .videoPlaybackFacts(Optional.empty())
+            .scannedEndTimes(Map.of(0, Duration.ofSeconds(7_000)))
+            .build(),
+        headerEnd.toBuilder()
+            .streams(List.of())
+            .scannedEndTimes(Map.of(0, Duration.ofSeconds(7_000)))
+            .build());
+  }
+
+  @Test
+  @DisplayName("Should omit the scanned video end when an encode starts at segment zero")
+  void shouldOmitTheScannedVideoEndWhenAnEncodeStartsAtSegmentZero() {
+    startedEncodedSession(probeWithAScannedVideoEnd());
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::videoEnd)
+        .isEqualTo(Optional.empty());
+  }
+
+  @Test
+  @DisplayName("Should omit the scanned video end when a relocated attempt copies video")
+  void shouldOmitTheScannedVideoEndWhenARelocatedAttemptCopiesVideo() {
+    var session = startedCopySession(probeWithAScannedVideoEnd());
+
+    var request = relocatedRequest(session, 100);
+
+    assertThat(request.videoEnd()).isEmpty();
+  }
+
+  private static MediaProbe.MediaProbeBuilder probeWithAScannedVideoEnd() {
+    return defaultProbeBuilder()
+        .streams(List.of(StreamInfo.builder().index(0).codecType("video").build()))
+        .scannedEndTimes(Map.of(0, Duration.ofSeconds(7_200)));
+  }
+
   // The worker keeps the stored keyframe's seek position when the read from it shows a picture by
   // 599.5 s, 0.5 s before segment 100's start.
   @Test

@@ -394,6 +394,7 @@ final class RemoteVariantJobMapper {
         .readFromLastKeyframePresentingAtOrBefore()
         .ifPresent(
             time -> execution.setReadFromLastKeyframePresentingAtOrBefore(protobufDuration(time)));
+    request.videoEnd().ifPresent(end -> execution.setVideoEnd(protobufDuration(end)));
     request
         .exactSegmentStarts()
         .ifPresent(
